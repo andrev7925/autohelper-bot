@@ -11,11 +11,24 @@ from datetime import datetime
 from rapidfuzz import process, fuzz
 from transformers import AutoFeatureExtractor, AutoModelForImageClassification
 from transformers import CLIPProcessor, CLIPModel
-from paddleocr import PaddleOCR
 import torch
 import openai
 import base64
 import json
+
+try:
+    from paddleocr import PaddleOCR
+    _PADDLEOCR_IMPORT_ERROR = None
+except Exception as _paddle_import_error:
+    PaddleOCR = None
+    _PADDLEOCR_IMPORT_ERROR = _paddle_import_error
+
+try:
+    import cv2
+    _CV2_IMPORT_ERROR = None
+except Exception as _cv2_import_error:
+    cv2 = None
+    _CV2_IMPORT_ERROR = _cv2_import_error
 PHOTO_EXTRACTION_PROMPT_EN = """You are a Vehicle Advertisement Data Extraction Engine.
 
 Your task is to extract and structure ALL factual information visible in provided car sale advertisement screenshots or photos.
@@ -1263,15 +1276,14 @@ def ocr_paddle_text(image: Image.Image) -> str:
             lines.append(line[1][0])
     return "\n".join(lines)
 
-import cv2
-import numpy as np
-
 def preprocess_image(img: Image.Image) -> Image.Image:
     # Збільшення розміру
     scale = 1
     img = img.resize((img.width * scale, img.height * scale), Image.LANCZOS)
     # В PIL -> numpy array
     img_np = np.array(img.convert('L'))
+    if cv2 is None:
+        return Image.fromarray(img_np).convert('RGB')
     # CLAHE (локальний контраст)
     clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8,8))
     img_np = clahe.apply(img_np)
@@ -2127,6 +2139,8 @@ def classify_damage(image: Image.Image):
 def get_paddle_ocr():
     global ocr_paddle
     if ocr_paddle is None:
+        if PaddleOCR is None:
+            raise RuntimeError(f"PaddleOCR is unavailable: {_PADDLEOCR_IMPORT_ERROR}")
         print("🔄 Ініціалізація PaddleOCR...")
         ocr_paddle = PaddleOCR(use_angle_cls=True, lang='uk')
     return ocr_paddle
