@@ -30,8 +30,8 @@ media_group_buffers = defaultdict(list)
 media_group_timeouts = {}
 
 MAX_ANALYSES_PER_USER = 3
-MAX_PHOTOS_PER_REQUEST = 5
-MAX_PREVIEW_PHOTOS = 3
+MAX_PHOTOS_PER_REQUEST = 12
+MAX_PREVIEW_PHOTOS = 12
 
 LIMIT_ANALYSES_TEXT = {
     "uk": "⚠️ Ви досягли ліміту: максимум 3 аналізи авто.",
@@ -43,21 +43,21 @@ LIMIT_ANALYSES_TEXT = {
 }
 
 LIMIT_PHOTOS_TEXT = {
-    "uk": "⚠️ Перевищено ліміт фото: для одного аналізу можна надіслати максимум 5 фото.",
-    "ru": "⚠️ Превышен лимит фото: для одного анализа можно отправить максимум 5 фото.",
-    "en": "⚠️ Photo limit exceeded: you can send a maximum of 5 photos per analysis.",
-    "es": "⚠️ Límite de fotos excedido: puedes enviar un máximo de 5 fotos por análisis.",
-    "pt": "⚠️ Limite de fotos excedido: você pode enviar no máximo 5 fotos por análise.",
-    "tr": "⚠️ Fotoğraf limiti aşıldı: bir analiz için en fazla 5 fotoğraf gönderebilirsiniz.",
+    "uk": "⚠️ Перевищено ліміт фото: для одного аналізу можна надіслати максимум 12 фото.",
+    "ru": "⚠️ Превышен лимит фото: для одного анализа можно отправить максимум 12 фото.",
+    "en": "⚠️ Photo limit exceeded: you can send a maximum of 12 photos per analysis.",
+    "es": "⚠️ Límite de fotos excedido: puedes enviar un máximo de 12 fotos por análisis.",
+    "pt": "⚠️ Limite de fotos excedido: você pode enviar no máximo 12 fotos por análise.",
+    "tr": "⚠️ Fotoğraf limiti aşıldı: bir analiz için en fazla 12 fotoğraf gönderebilirsiniz.",
 }
 
 PREVIEW_PHOTO_LIMIT_TEXT = {
-    "uk": "⚠️ Для PREVIEW ANALYSIS доступно максимум 3 фото. Більша кількість фото доступна лише для повної перевірки разом із VIN-кодом.",
-    "ru": "⚠️ Для PREVIEW ANALYSIS доступно максимум 3 фото. Большее количество фото доступно только для полной проверки вместе с VIN-кодом.",
-    "en": "⚠️ PREVIEW ANALYSIS supports up to 3 photos. More photos are available only for full check with VIN code.",
-    "es": "⚠️ PREVIEW ANALYSIS admite hasta 3 fotos. Más fotos están disponibles solo para la verificación completa junto con el código VIN.",
-    "pt": "⚠️ O PREVIEW ANALYSIS suporta até 3 fotos. Mais fotos estão disponíveis apenas para a verificação completa junto com o código VIN.",
-    "tr": "⚠️ PREVIEW ANALYSIS en fazla 3 fotoğrafı destekler. Daha fazla fotoğraf yalnızca VIN kodu ile tam kontrol için kullanılabilir.",
+    "uk": "⚠️ Для одного аналізу можна надіслати максимум 12 фото.",
+    "ru": "⚠️ Для одного анализа можно отправить максимум 12 фото.",
+    "en": "⚠️ You can send up to 12 photos per analysis.",
+    "es": "⚠️ Puedes enviar hasta 12 fotos por análisis.",
+    "pt": "⚠️ Você pode enviar até 12 fotos por análise.",
+    "tr": "⚠️ Bir analiz için en fazla 12 fotoğraf gönderebilirsiniz.",
 }
 
 import re

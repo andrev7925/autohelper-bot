@@ -229,113 +229,101 @@ CONTACT_DEVELOPER_BUTTON = {
 }
 
 welcome_messages = {
-    "uk": """🚘 Привіт! Ти запустив AutoHelperBot — розумного помічника для всіх, хто має або планує купити авто.
+    "uk": """🚗 Привіт! Я AutoHelperBot — твій помічник при покупці авто.
 
-Цей бот створений, щоб заощадити твій час, нерви й гроші.
+⚠️ Багато людей купують авто з прихованими проблемами.
+Перевір оголошення перед покупкою.
 
-🔍 Головна кнопка — «Аналіз оголошення»
-Надішли лінк або скріншот оголошення — і я дам тобі повну картину: 
-чи варто купувати, що викликає підозри, на що звернути увагу, скільки авто реально коштує.
+Боїшся купити погану машину?
+Я допоможу перевірити оголошення.
 
-👨‍🔧 «Механік онлайн» — твій особистий технічний консультант. 
-Пиши, якщо авто не заводиться, щось гримить або не знаєш, що робити.
+📸 Просто надішли скріншот оголошення — і я скажу:
 
-📌 Додатково:
-- 🧾 Перевірка VIN
-- ⚖️ Юридична допомога
-- 📺 Автоканал
+• чи варто купувати
+• що виглядає підозріло
+• реальну ціну авто
 
-🌐 Працюю шістьма мовами. Для ідеальної роботи обери свою країну 🌍""",
+🌍 Щоб аналіз був точніший, обери країну, де плануєш купувати авто.""",
 
-    "ru": """🚘 Привет! Ты запустил AutoHelperBot — умного помощника для всех, у кого есть авто или кто планирует покупку.
+    "ru": """🚗 Привет! Я AutoHelperBot — твой помощник при покупке авто.
 
-Этот бот сэкономит тебе время, нервы и деньги.
+⚠️ Многие люди покупают авто со скрытыми проблемами.
+Проверь объявление перед покупкой.
 
-🔍 Главная кнопка — «Анализ объявления»
-Просто пришли ссылку или скриншот — и я дам полный разбор:
-стоит ли покупать, что вызывает подозрения и сколько реально стоит авто.
+Боишься купить плохую машину?
+Я помогу проверить объявление.
 
-👨‍🔧 «Механик онлайн» — твой персональный технический консультант.
-Пиши, если машина не заводится, что-то гремит или не знаешь, что делать.
+📸 Просто отправь скриншот объявления — и я скажу:
 
-📌 Также доступно:
-- 🧾 Проверка VIN
-- ⚖️ Юридическая помощь
-- 📺 Автоканал
+• стоит ли покупать
+• что выглядит подозрительно
+• реальную цену авто
 
-🌐 Я говорю на шести языках. Для точных ответов выбери свою страну 🌍""",
+🌍 Чтобы анализ был точнее, выбери страну, где планируешь покупать авто.""",
 
-    "en": """🚘 Welcome! You've launched AutoHelperBot — your smart assistant for everything car-related.
+    "en": """🚗 Hi! I’m AutoHelperBot — your assistant when buying a car.
 
-This bot saves you time, money, and stress.
+⚠️ Many people buy cars with hidden problems.
+Check the listing before you buy.
 
-🔍 Main button — “Analyze Ad”
-Send me a link or screenshot — and I’ll give you a full review:
-is it worth buying, what’s suspicious, what to check, and what the car is really worth.
+Afraid of buying a bad car?
+I’ll help you check the listing.
 
-👨‍🔧 “Mechanic Online” — your personal tech advisor. 
-Ask if your car won’t start, makes noises, or you don’t know what to do.
+📸 Just send a screenshot of the listing — and I’ll tell you:
 
-📌 Also available:
-- 🧾 VIN Check
-- ⚖️ Legal Help
-- 📺 Auto Channel
+• whether it’s worth buying
+• what looks suspicious
+• the real car price
 
-🌐 I support 6 languages. For best results, select your country 🌍""",
+🌍 To make the analysis more accurate, choose the country where you plan to buy a car.""",
 
-    "es": """🚘 ¡Bienvenido! Has iniciado AutoHelperBot, tu asistente inteligente para todo lo relacionado con autos.
+    "es": """🚗 ¡Hola! Soy AutoHelperBot — tu asistente al comprar un coche.
 
-Este bot te ahorra tiempo, dinero y preocupaciones.
+⚠️ Muchas personas compran coches con problemas ocultos.
+Revisa el anuncio antes de comprar.
 
-🔍 Botón principal — “Analizar anuncio”
-Envíame un enlace o captura de pantalla — y te daré un análisis completo:
-si vale la pena comprarlo, qué es sospechoso y cuánto cuesta realmente.
+¿Te preocupa comprar un coche malo?
+Yo te ayudo a revisar el anuncio.
 
-👨‍🔧 “Mecánico en línea” — tu asesor técnico personal.
-Escríbeme si el auto no arranca, hace ruidos o no sabes qué hacer.
+📸 Solo envía una captura de pantalla del anuncio y te diré:
 
-📌 También disponible:
-- 🧾 Verificación VIN
-- ⚖️ Ayuda legal
-- 📺 Canal de autos
+• si vale la pena comprarlo
+• qué se ve sospechoso
+• el precio real del coche
 
-🌐 Hablo 6 idiomas. Para mejores respuestas, elige tu país 🌍""",
+🌍 Para que el análisis sea más preciso, elige el país donde planeas comprar un coche.""",
 
-    "pt": """🚘 Olá! Você iniciou o AutoHelperBot — seu assistente inteligente para tudo sobre carros.
+    "pt": """🚗 Olá! Eu sou o AutoHelperBot — seu assistente na compra de um carro.
 
-Este bot economiza seu tempo, dinheiro e preocupações.
+⚠️ Muitas pessoas compram carros com problemas ocultos.
+Verifique o anúncio antes de comprar.
 
-🔍 Botão principal — “Analisar anúncio”
-Envie link ou imagem — e eu te dou uma análise completa:
-vale a pena comprar, o que é suspeito e o preço real.
+Tem medo de comprar um carro ruim?
+Eu te ajudo a verificar o anúncio.
 
-👨‍🔧 “Mecânico online” — seu consultor técnico pessoal.
-Fale comigo se o carro não ligar, tiver ruídos ou você tiver dúvidas.
+📸 Basta enviar uma captura de tela do anúncio — e eu vou dizer:
 
-📌 Também disponível:
-- 🧾 Verificação VIN
-- ⚖️ Ajuda legal
-- 📺 Canal automotivo
+• se vale a pena comprar
+• o que parece suspeito
+• o preço real do carro
 
-🌐 Suporte para 6 idiomas. Para melhores resultados, selecione seu país 🌍""",
+🌍 Para que a análise seja mais precisa, escolha o país onde você planeja comprar um carro.""",
 
-    "tr": """🚘 Merhaba! AutoHelperBot'a hoş geldin — araba dünyasındaki akıllı yardımcın.
+    "tr": """🚗 Merhaba! Ben AutoHelperBot — araba satın alırken yardımcınızım.
 
-Bu bot sana zaman, para ve stres tasarrufu sağlar.
+⚠️ Birçok kişi gizli sorunları olan araçlar satın alıyor.
+Satın almadan önce ilanı kontrol edin.
 
-🔍 Ana buton — “İlan Analizi”
-Bağlantı veya ekran görüntüsü gönder — sana tam analiz vereyim:
-almalı mısın, ne şüpheli, gerçek değer nedir.
+Kötü bir araba almaktan korkuyor musunuz?
+İlanı kontrol etmenize yardımcı olurum.
 
-👨‍🔧 “Online Mekanik” — kişisel teknik danışmanındır.
-Araba çalışmıyor mu, ses mi geliyor, hata mı veriyor? Yaz bana.
+📸 Sadece ilanın ekran görüntüsünü gönderin, ben de şunları söyleyeyim:
 
-📌 Ekstra hizmetler:
-- 🧾 VIN kontrolü
-- ⚖️ Hukuki yardım
-- 📺 Oto kanalı
+• satın almaya değer mi
+• şüpheli görünen noktalar
+• aracın gerçek fiyatı
 
-🌐 6 dil destekliyorum. En iyi sonuç için ülkeni seç 🌍"""
+🌍 Analizin daha doğru olması için aracı satın almayı planladığınız ülkeyi seçin."""
 }
 
 CHOOSE_ACTION = {
@@ -364,7 +352,7 @@ ANALYZE_AD_PROMPT = {
 
 
 📸 2. Як надіслати скріншоти:
-1. 🤳 Зроби 2–5 скріншотів оголошення (фото, ціна, опис)
+1. 🤳 Зроби 2–12 скріншотів оголошення (фото, ціна, опис)
 2. 📎 У боті натисни скріпку
 3. 🖼️ Обери “Галерея” або “Фото”
 4. ✅ Вибери потрібні зображення
@@ -384,7 +372,7 @@ You can send a car listing in two ways:
 6. ▶️ Tap the “Send” button (blue arrow ➤)
 
 📸 2. How to send screenshots:
-1. 🤳 Take 2–5 screenshots of the listing (photos, price, description)
+1. 🤳 Take 2–12 screenshots of the listing (photos, price, description)
 2. 📎 In the bot, tap the paperclip
 3. 🖼️ Choose “Gallery” or “Photos”
 4. ✅ Select the images
@@ -405,7 +393,7 @@ You can send a car listing in two ways:
 
 
 📸 2. Как отправить скриншоты:
-1. 🤳 Сделайте 2–5 скриншотов объявления (фото, цена, описание)
+1. 🤳 Сделайте 2–12 скриншотов объявления (фото, цена, описание)
 2. 📎 В боте нажмите скрепку
 3. 🖼️ Выберите “Галерея” или “Фото”
 4. ✅ Отметьте нужные изображения
@@ -425,7 +413,7 @@ Puedes enviar un anuncio de coche de dos maneras:
 6. ▶️ Pulsa el botón “Enviar” (flecha azul ➤)
 
 📸 . Cómo enviar capturas de pantalla:
-1. 🤳 Haz 2–5 capturas del anuncio (fotos, precio, descripción)
+1. 🤳 Haz 2–12 capturas del anuncio (fotos, precio, descripción)
 2. 📎 En el bot, pulsa el clip
 3. 🖼️ Elige “Galería” o “Fotos”
 4. ✅ Selecciona las imágenes
@@ -445,7 +433,7 @@ Você pode enviar um anúncio de carro de duas formas:
 6. ▶️ Toque no botão “Enviar” (seta azul ➤)
 
 📸 2. Como enviar capturas de tela:
-1. 🤳 Tire 2–5 capturas do anúncio (fotos, preço, descrição)
+1. 🤳 Tire 2–12 capturas do anúncio (fotos, preço, descrição)
 2. 📎 No bot, toque no clipe
 3. 🖼️ Escolha “Galeria” ou “Fotos”
 4. ✅ Selecione as imagens
@@ -465,7 +453,7 @@ Bir araç ilanını iki şekilde gönderebilirsiniz:
 6. ▶️ “Gönder” düğmesine dokunun (mavi ok ➤)
 
 📸 2. Ekran görüntüsü nasıl gönderilir:
-1. 🤳 İlanın 2–5 ekran görüntüsünü alın (fotoğraf, fiyat, açıklama)
+1. 🤳 İlanın 2–12 ekran görüntüsünü alın (fotoğraf, fiyat, açıklama)
 2. 📎 Bottaki ataç simgesine dokunun
 3. 🖼️ “Galeri” veya “Fotoğraflar”ı seçin
 4. ✅ Görselleri seçin

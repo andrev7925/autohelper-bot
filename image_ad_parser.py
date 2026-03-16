@@ -1621,7 +1621,7 @@ async def analyze_ad_from_images(image_bytes_list, user_lang='uk'):
         data, extracted_text = await asyncio.to_thread(gpt4v_extract_all, small_img, user_lang)
         return i, data, extracted_text
 
-    photos_to_process = images[:5]  # Максимум 5 фото
+    photos_to_process = images[:12]  # Максимум 12 фото
     tasks = [_analyze_single_photo(i, img) for i, img in enumerate(photos_to_process)]
     results = await asyncio.gather(*tasks)
 
@@ -1660,7 +1660,7 @@ async def analyze_ad_from_images(image_bytes_list, user_lang='uk'):
 
     # Додатковий aggregate-прохід по склеєному полотну всіх фото: краще для контекстних полів.
     try:
-        merged_img = merge_images_vertically(images[:5])
+        merged_img = merge_images_vertically(photos_to_process)
         print("DEBUG: Aggregate pass через GPT-4V по merged image...")
         agg_data, agg_text = await asyncio.to_thread(gpt4v_extract_all, merged_img, user_lang)
         if agg_text:
@@ -1680,7 +1680,7 @@ async def analyze_ad_from_images(image_bytes_list, user_lang='uk'):
     )
     if need_focus:
         try:
-            focus_img = merge_images_vertically(images[:5])
+            focus_img = merge_images_vertically(photos_to_process)
             print("DEBUG: Focused pass через GPT-4V для year/gearbox/interior/tire/pedals/color...")
             focus_data = await asyncio.to_thread(gpt4v_extract_focus_fields, focus_img, user_lang)
             if isinstance(focus_data, dict) and focus_data:
@@ -1706,7 +1706,7 @@ async def analyze_ad_from_images(image_bytes_list, user_lang='uk'):
 
         # Direct plate OCR fallback from photos (helps when LLM JSON misses license plate).
         if not merged_data.get("license_plate"):
-            for img in images[:5]:
+            for img in photos_to_process:
                 try:
                     plate_guess = await asyncio.to_thread(extract_plate_paddle, img)
                     if plate_guess:
