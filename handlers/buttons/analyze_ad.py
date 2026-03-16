@@ -82,7 +82,7 @@ PROGRESS_STEPS = {
     "uk": [
         "🔍 Ініціалізуємо AI-аналіз оголошення...",
         "📡 Завантажуємо дані оголошення...",
-        "📄 Зчитуємо текст із оголошення...",
+        "📄 Обробляємо дані оголошення...",
         "🧠 AI виділяє ключові параметри авто...",
         "🚗 Ідентифікуємо модель автомобіля...",
         "📅 Аналізуємо рік виробництва...",
@@ -114,7 +114,7 @@ PROGRESS_STEPS = {
     "en": [
         "🔍 Initializing AI listing analysis...",
         "📡 Loading listing data...",
-        "📄 Reading listing text...",
+        "📄 Processing listing data...",
         "🧠 AI is extracting key vehicle parameters...",
         "🚗 Identifying vehicle model...",
         "📅 Analyzing production year...",
@@ -146,7 +146,7 @@ PROGRESS_STEPS = {
     "ru": [
         "🔍 Инициализируем AI-анализ объявления...",
         "📡 Загружаем данные объявления...",
-        "📄 Считываем текст объявления...",
+        "📄 Обрабатываем данные объявления...",
         "🧠 AI выделяет ключевые параметры авто...",
         "🚗 Идентифицируем модель автомобиля...",
         "📅 Анализируем год выпуска...",
@@ -178,7 +178,7 @@ PROGRESS_STEPS = {
     "es": [
         "🔍 Inicializando el análisis AI del anuncio...",
         "📡 Cargando datos del anuncio...",
-        "📄 Leyendo el texto del anuncio...",
+        "📄 Procesando los datos del anuncio...",
         "🧠 La IA extrae parámetros clave del vehículo...",
         "🚗 Identificando el modelo del vehículo...",
         "📅 Analizando el año de fabricación...",
@@ -210,7 +210,7 @@ PROGRESS_STEPS = {
     "pt": [
         "🔍 Inicializando a análise AI do anúncio...",
         "📡 Carregando dados do anúncio...",
-        "📄 Lendo o texto do anúncio...",
+        "📄 Processando os dados do anúncio...",
         "🧠 A IA está extraindo parâmetros-chave do veículo...",
         "🚗 Identificando o modelo do veículo...",
         "📅 Analisando o ano de fabricação...",
@@ -242,7 +242,7 @@ PROGRESS_STEPS = {
     "tr": [
         "🔍 İlan için AI analizini başlatıyoruz...",
         "📡 İlan verileri yükleniyor...",
-        "📄 İlan metni okunuyor...",
+        "📄 İlan verileri işleniyor...",
         "🧠 AI aracın temel parametrelerini çıkarıyor...",
         "🚗 Araç modeli tanımlanıyor...",
         "📅 Üretim yılı analiz ediliyor...",

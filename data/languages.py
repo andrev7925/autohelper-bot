@@ -122,12 +122,12 @@ analyze_ad_button = {
 }
 
 EXPLANATION_TEXT = {
-    "uk": "🔍 Надішліть текст, посилання або скріншот оголошення.",
-    "en": "🔍 Send ad text, link or screenshot.",
-    "ru": "🔍 Отправьте текст, ссылку или скриншот объявления.",
-    "es": "🔍 Envía texto, enlace o captura del anuncio.",
-    "pt": "🔍 Envie texto, link ou screenshot do anúncio.",
-    "tr": "🔍 İlan metni, bağlantı veya ekran görüntüsünü gönderin."
+    "uk": "🔍 Надішліть посилання або скріншот оголошення.",
+    "en": "🔍 Send a listing link or screenshot.",
+    "ru": "🔍 Отправьте ссылку или скриншот объявления.",
+    "es": "🔍 Envía un enlace o captura del anuncio.",
+    "pt": "🔍 Envie um link ou captura do anúncio.",
+    "tr": "🔍 İlan bağlantısı veya ekran görüntüsü gönderin."
 }
 
 ANALYZE_CAR_SUBMENU = {
@@ -234,7 +234,7 @@ welcome_messages = {
 Цей бот створений, щоб заощадити твій час, нерви й гроші.
 
 🔍 Головна кнопка — «Аналіз оголошення»
-Надішли текст, лінк або скріншот оголошення — і я дам тобі повну картину: 
+Надішли лінк або скріншот оголошення — і я дам тобі повну картину: 
 чи варто купувати, що викликає підозри, на що звернути увагу, скільки авто реально коштує.
 
 👨‍🔧 «Механік онлайн» — твій особистий технічний консультант. 
@@ -252,7 +252,7 @@ welcome_messages = {
 Этот бот сэкономит тебе время, нервы и деньги.
 
 🔍 Главная кнопка — «Анализ объявления»
-Просто пришли текст, ссылку или скриншот — и я дам полный разбор:
+Просто пришли ссылку или скриншот — и я дам полный разбор:
 стоит ли покупать, что вызывает подозрения и сколько реально стоит авто.
 
 👨‍🔧 «Механик онлайн» — твой персональный технический консультант.
@@ -270,7 +270,7 @@ welcome_messages = {
 This bot saves you time, money, and stress.
 
 🔍 Main button — “Analyze Ad”
-Send me a text, link, or screenshot — and I’ll give you a full review:
+Send me a link or screenshot — and I’ll give you a full review:
 is it worth buying, what’s suspicious, what to check, and what the car is really worth.
 
 👨‍🔧 “Mechanic Online” — your personal tech advisor. 
@@ -288,7 +288,7 @@ Ask if your car won’t start, makes noises, or you don’t know what to do.
 Este bot te ahorra tiempo, dinero y preocupaciones.
 
 🔍 Botón principal — “Analizar anuncio”
-Envíame un texto, enlace o captura de pantalla — y te daré un análisis completo:
+Envíame un enlace o captura de pantalla — y te daré un análisis completo:
 si vale la pena comprarlo, qué es sospechoso y cuánto cuesta realmente.
 
 👨‍🔧 “Mecánico en línea” — tu asesor técnico personal.
@@ -306,7 +306,7 @@ Escríbeme si el auto no arranca, hace ruidos o no sabes qué hacer.
 Este bot economiza seu tempo, dinheiro e preocupações.
 
 🔍 Botão principal — “Analisar anúncio”
-Envie texto, link ou imagem — e eu te dou uma análise completa:
+Envie link ou imagem — e eu te dou uma análise completa:
 vale a pena comprar, o que é suspeito e o preço real.
 
 👨‍🔧 “Mecânico online” — seu consultor técnico pessoal.
@@ -324,7 +324,7 @@ Fale comigo se o carro não ligar, tiver ruídos ou você tiver dúvidas.
 Bu bot sana zaman, para ve stres tasarrufu sağlar.
 
 🔍 Ana buton — “İlan Analizi”
-Metin, bağlantı veya ekran görüntüsü gönder — sana tam analiz vereyim:
+Bağlantı veya ekran görüntüsü gönder — sana tam analiz vereyim:
 almalı mısın, ne şüpheli, gerçek değer nedir.
 
 👨‍🔧 “Online Mekanik” — kişisel teknik danışmanındır.
@@ -351,8 +351,8 @@ ANALYZE_AD_PROMPT = {
 
     "uk": """📌 Як надіслати оголошення?
 
-Ви можете надіслати оголошення трьома способами:
-🔗 посилання | 📝 текст | 📸 скріншот
+Ви можете надіслати оголошення двома способами:
+🔗 посилання | 📸 скріншот
 
 🔗 1. Як надіслати посилання:
 1. 📱 Відкрий сайт або додаток для продажу авто
@@ -372,8 +372,8 @@ ANALYZE_AD_PROMPT = {
 """,
     "en": """📌 How to send a listing?
 
-You can send a car listing in three ways:
-🔗 link | 📝 text | 📸 screenshot
+You can send a car listing in two ways:
+🔗 link | 📸 screenshot
 
 🔗 1. How to send a link:
 1. 📱 Open a website or app for car sales
@@ -392,8 +392,8 @@ You can send a car listing in three ways:
 """,
     "ru": """📌 Как отправить объявление?
 
-Вы можете отправить объявление тремя способами:
-🔗 ссылка | 📝 текст | 📸 скриншот
+Вы можете отправить объявление двумя способами:
+🔗 ссылка | 📸 скриншот
 
 🔗 1. Как отправить ссылку:
 1. 📱 Откройте сайт или приложение для продажи авто
@@ -413,8 +413,8 @@ You can send a car listing in three ways:
 """,
     "es": """📌 ¿Cómo enviar un anuncio?
 
-Puedes enviar un anuncio de coche de tres maneras:
-🔗 enlace | 📝 texto | 📸 captura de pantalla
+Puedes enviar un anuncio de coche de dos maneras:
+🔗 enlace | 📸 captura de pantalla
 
 🔗 1. Cómo enviar un enlace:
 1. 📱 Abre un sitio web o app de ventas de coches
@@ -433,8 +433,8 @@ Puedes enviar un anuncio de coche de tres maneras:
 """,
     "pt": """📌 Como enviar um anúncio?
 
-Você pode enviar um anúncio de carro de três formas:
-🔗 link | 📝 texto | 📸 captura de tela
+Você pode enviar um anúncio de carro de duas formas:
+🔗 link | 📸 captura de tela
 
 🔗 1. Como enviar um link:
 1. 📱 Abra um site ou aplicativo de venda de carros
@@ -453,8 +453,8 @@ Você pode enviar um anúncio de carro de três formas:
 """,
     "tr": """📌 İlan nasıl gönderilir?
 
-Bir araç ilanını üç şekilde gönderebilirsiniz:
-🔗 bağlantı | 📝 metin | 📸 ekran görüntüsü
+Bir araç ilanını iki şekilde gönderebilirsiniz:
+🔗 bağlantı | 📸 ekran görüntüsü
 
 🔗 1. Bağlantı nasıl gönderilir:
 1. 📱 Bir araç satış sitesi veya uygulaması açın
