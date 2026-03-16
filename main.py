@@ -59,7 +59,10 @@ def init_models_background():
     print("🔄 Завантажую ML моделі в фоні...")
     try:
         # Завантажуємо моделі в окремому потоці
-        from image_ad_parser import get_paddle_ocr
+        from image_ad_parser import get_paddle_ocr, _PADDLEOCR_IMPORT_ERROR
+        if _PADDLEOCR_IMPORT_ERROR is not None:
+            print(f"ℹ️ Пропуск ініціалізації PaddleOCR: {_PADDLEOCR_IMPORT_ERROR}")
+            return
         get_paddle_ocr()
         print("✅ Всі ML моделі завантажено!")
     except Exception as e:
