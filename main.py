@@ -5,6 +5,9 @@ import os
 import platform
 import sys
 import logging
+
+os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
+
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 from config import TOKEN
