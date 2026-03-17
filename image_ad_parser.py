@@ -1341,7 +1341,7 @@ async def analyze_ad_from_images(image_bytes_list, user_lang='uk'):
                 if 1000 <= mileage_num <= 900000:
                     score += 70
                 else:
-                    score += 20
+                    score -= 80
             else:
                 score -= 20
 
@@ -1352,7 +1352,7 @@ async def analyze_ad_from_images(image_bytes_list, user_lang='uk'):
                 if 300 <= price_num <= 5_000_000:
                     score += 70
                 else:
-                    score += 20
+                    score -= 80
             else:
                 score -= 20
 
@@ -1469,6 +1469,7 @@ async def analyze_ad_from_images(image_bytes_list, user_lang='uk'):
         if not raw_text:
             return None, None
         txt = str(raw_text)
+        txt_l = txt.lower()
         price_match = re.search(
             r"(?:€|eur|usd|\$|gbp|£|грн|uah|try|tl)?\s*(\d{1,3}(?:[\s,\.]\d{3})+|\d{3,6})\s*(€|eur|usd|\$|gbp|£|грн|uah|try|tl)?",
             txt,
@@ -1491,6 +1492,19 @@ async def analyze_ad_from_images(image_bytes_list, user_lang='uk'):
             symbol_left = re.search(r"(€|\$|£)", txt[max(0, price_match.start()-2):price_match.start()+2])
             if symbol_left:
                 cur = symbol_left.group(1)
+
+        # Без явної валюти/символу ціну не вважаємо достовірною (щоб не брати ID/серійники як price).
+        if not cur:
+            return None, None
+
+        # Додатковий контекстний фільтр: поруч мають бути ключі, характерні для ціни.
+        ctx_start = max(0, price_match.start() - 28)
+        ctx_end = min(len(txt_l), price_match.end() + 28)
+        context = txt_l[ctx_start:ctx_end]
+        price_keywords = ["price", "ціна", "цена", "eur", "usd", "gbp", "€", "$", "£", "k€", "k €"]
+        if not any(keyword in context for keyword in price_keywords):
+            return None, None
+
         if cur in {"€", "eur"}:
             currency = "EUR"
         elif cur in {"$", "usd"}:
@@ -1607,6 +1621,17 @@ async def analyze_ad_from_images(image_bytes_list, user_lang='uk'):
             if re.search(pattern, txt, re.IGNORECASE):
                 return color_name
         return ""
+
+    def _safe_int(value):
+        if value is None:
+            return None
+        digits = re.sub(r"\D", "", str(value))
+        if not digits:
+            return None
+        try:
+            return int(digits)
+        except Exception:
+            return None
 
     async def _analyze_single_photo(i: int, img: Image.Image):
         # Тримаємо вищу деталізацію: дрібні поля (колір/КПП/стікери) часто губляться на 1024.
@@ -1777,10 +1802,48 @@ async def analyze_ad_from_images(image_bytes_list, user_lang='uk'):
             plate_info = extract_plate_info(str(plate_for_info)) or {}
             plate_year = plate_info.get("year")
             plate_country = plate_info.get("country")
-            if not merged_data.get("year") and isinstance(plate_year, int) and 1980 <= plate_year <= 2035:
-                _set_if_better("year", plate_year, source_quality=45.0)
+            current_year = _safe_int(merged_data.get("year"))
+            if isinstance(plate_year, int) and 1980 <= plate_year <= 2035:
+                if current_year is None or abs(current_year - plate_year) >= 1:
+                    _set_if_better("year", plate_year, source_quality=60.0)
             if not merged_data.get("country") and isinstance(plate_country, str) and plate_country.strip():
                 _set_if_better("country", plate_country.strip(), source_quality=20.0)
+
+        # Final anti-hallucination normalization for numeric core fields.
+        normalized_year = _safe_int(merged_data.get("year"))
+        if normalized_year is None or not (1980 <= normalized_year <= 2035):
+            merged_data.pop("year", None)
+        else:
+            merged_data["year"] = normalized_year
+
+        normalized_price = _safe_int(merged_data.get("price"))
+        if normalized_price is None or not (300 <= normalized_price <= 5_000_000):
+            merged_data.pop("price", None)
+        else:
+            merged_data["price"] = normalized_price
+
+        normalized_mileage_km = _safe_int(merged_data.get("mileage_km"))
+        if normalized_mileage_km is not None and not (1000 <= normalized_mileage_km <= 900000):
+            normalized_mileage_km = None
+            merged_data.pop("mileage_km", None)
+        elif normalized_mileage_km is not None:
+            merged_data["mileage_km"] = normalized_mileage_km
+
+        normalized_mileage_miles = _safe_int(merged_data.get("mileage_miles"))
+        if normalized_mileage_miles is not None and not (1000 <= normalized_mileage_miles <= 700000):
+            normalized_mileage_miles = None
+            merged_data.pop("mileage_miles", None)
+        elif normalized_mileage_miles is not None:
+            merged_data["mileage_miles"] = normalized_mileage_miles
+
+        # If price has no reliable currency evidence, drop price to avoid using document IDs as amount.
+        if merged_data.get("price") and not merged_data.get("currency"):
+            fb_price, fb_currency = _extract_price_currency_from_text(full_ocr_text)
+            if fb_price and fb_currency:
+                merged_data["price"] = fb_price
+                merged_data["currency"] = fb_currency
+            else:
+                merged_data.pop("price", None)
 
         # Normalize main mileage field for downstream report logic.
         if not merged_data.get("mileage"):

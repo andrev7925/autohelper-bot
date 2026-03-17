@@ -828,7 +828,12 @@ async def gpt_full_analysis_4o(site_data: dict, country: str, language: str = "u
                 f"{prompt}\n\n"
                 f"user_language: {user_language}\n"
                 f"country_context: {country}\n\n"
-                f"{instruction}"
+                f"{instruction}\n\n"
+                "CRITICAL DATA INTEGRITY RULES:\n"
+                "- Use ONLY values from the structured block for year, mileage, and price.\n"
+                "- If any of these values are missing/empty, write them as unknown and do NOT invent numbers.\n"
+                "- Never treat certificate IDs, document numbers, phone numbers, VIN fragments, or registration codes as price/mileage/year.\n"
+                "- If values conflict, explicitly mention conflict and keep the safer/unknown interpretation."
             ),
         },
         {"role": "user", "content": f"{structured_block}\n\n{full_text_label} ({site_url}):\n{site_text}"}
