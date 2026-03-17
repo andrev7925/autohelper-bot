@@ -9,6 +9,7 @@ numpy>=1.26.0
 rapidfuzz>=3.9.0
 transformers>=4.42.0
 torch>=2.2.0
+paddlepaddle>=3.0.0
 paddleocr>=2.8.1
 opencv-python-headless>=4.10.0.84
 python-telegram-bot>=21.0
