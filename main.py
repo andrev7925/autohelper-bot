@@ -4,6 +4,7 @@ import multiprocessing
 import os
 import platform
 import sys
+import logging
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 from config import TOKEN
@@ -70,6 +71,7 @@ def init_models_background():
 
 async def main():
     print("🚀 Запускаю бота...")
+    logging.basicConfig(level=logging.INFO)
 
     from handlers.system import menu
     from handlers.system import start
@@ -91,7 +93,18 @@ async def main():
     dp.include_router(calc_expenses.router)
     
     print("✅ Бот запущено! ML моделі завантажуються паралельно.")
-    await dp.start_polling(bot)
+    retry_delay = 1
+    max_retry_delay = 30
+    while True:
+        try:
+            await bot.delete_webhook(drop_pending_updates=False)
+            await dp.start_polling(bot)
+            break
+        except Exception as e:
+            print(f"⚠️ Polling перервано: {e}")
+            print(f"🔁 Перезапуск polling через {retry_delay} сек...")
+            await asyncio.sleep(retry_delay)
+            retry_delay = min(retry_delay * 2, max_retry_delay)
 
 if __name__ == "__main__":
     multiprocessing.freeze_support()
