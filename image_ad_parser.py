@@ -31,452 +31,244 @@ except Exception as _cv2_import_error:
     _CV2_IMPORT_ERROR = _cv2_import_error
 PHOTO_EXTRACTION_PROMPT_EN = """You are a Vehicle Advertisement Data Extraction Engine.
 
-Your task is to extract and structure ALL factual information visible in provided car sale advertisement screenshots or photos.
-
-Images may contain:
-• advertisement screenshots
-• vehicle exterior photos
-• interior photos
-• dashboard photos
-• vehicle documents
-• license plates
-• VIN plates
-• inspection stickers
-• tax stickers
-• registration certificates
-
-You must combine information from ALL images.
-
+Task: extract ALL explicitly visible factual data from car sale images (ads, exterior, interior, documents, plates, VIN, stickers).
 
 ------------------------------------------------
-CORE RULES
+CORE
 ------------------------------------------------
-
-CRITICAL:
-
-Perform OCR on all images in ANY language.
-
-Perform visual inspection of vehicle photos.
-
-Extract ONLY information that is explicitly visible or readable.
-
-NEVER guess or infer missing information.
-
-If information is not explicitly visible → return empty value.
-
+• OCR on ALL images (any language)
+• Visual inspection
+• ONLY visible data
+• NO inference
+• Not visible → empty
 
 ------------------------------------------------
-STRICT OUTPUT RULES
+OUTPUT
 ------------------------------------------------
+Return ONLY valid JSON
 
-Return ONLY valid JSON.
-
-Do NOT include:
-• explanations
-• commentary
-• markdown
-• analysis
-• price evaluation
-• recommendations
-• any text outside JSON
-
-If a value cannot be determined:
-
-numbers → null  
-text → ""  
-arrays → []  
-
+Missing:
+numbers → null
+text → ""
+arrays → []
 
 ------------------------------------------------
-MULTI IMAGE HANDLING
+MULTI-IMAGE
 ------------------------------------------------
-
-If multiple images are provided:
-
-1. Extract OCR text from ALL images.
-2. Merge extracted information.
-3. Remove duplicates.
-
-If conflicting values appear:
-
-Keep the first clearly readable value.
-
-Add short explanation to:
-inconsistencies
-
+• Merge all images
+• Remove duplicates
+• Conflicts → keep first clear + log in "inconsistencies"
 
 ------------------------------------------------
-OCR EXTRACTION
+OCR
 ------------------------------------------------
+Extract ALL visible text:
+title, description, price, mileage, year, seller, phone, location, VIN, plates, inspection, tax, etc.
 
-Perform OCR on ALL images.
+Store:
+"raw_text_extracted"
 
-Extract any visible text including:
+Detect:
+"language_detected"
 
-• advertisement title
-• vehicle description
-• price
-• mileage
-• vehicle year
-• seller name
-• seller phone
-• location
-• license plates
-• VIN numbers
-• inspection information
-• tax information
-• any other readable text
-
-Store ALL extracted OCR text inside:
-
-raw_text_extracted
-
-Detect primary language and store in:
-
-language_detected
-
-If OCR text appears truncated or partially unreadable:
-
+If partial:
 "text_truncated": true
 
-
 ------------------------------------------------
-ANTI-INFERENCE RULES
+LICENSE PLATE (HIGH PRIORITY)
 ------------------------------------------------
+Detect license plates from:
+• vehicle photos (front/rear)
+• ads
+• documents
 
-NEVER infer information that is not explicitly visible.
+Extract EXACT characters (no correction, no guessing)
 
-STRICTLY FORBIDDEN:
+Support ANY country format, including:
 
-Do NOT infer seller_type from:
-• platform interface
-• ratings
-• badges
-• UI layout
-• listing style
+Ireland (IE):
+• 00-D-12345
+• 201-D-12345
+• 231-D-12345
 
-Do NOT assume:
+UK:
+• AB12 CDE
+• AB12CDE
 
-• country from language
-• engine type from model
-• trim level from appearance
-• mileage from interior wear
-• accident history
-• previous repairs
+Germany (DE):
+• B-AB 1234
+• M-XY 987
 
-If not visible → return empty value.
-
-
-------------------------------------------------
-FIELD MAPPING PROTECTION
-------------------------------------------------
-
-Extracted values must map ONLY to correct fields.
-
-Examples of INCORRECT mapping:
-
-Vehicle color → tire_condition  
-Engine volume → mileage  
-Inspection date → publication_date  
-Seller rating → seller_type  
-
-If mapping is ambiguous → leave field empty.
-
-
-------------------------------------------------
-MILEAGE DETECTION
-------------------------------------------------
-
-When extracting mileage, detect both value AND unit.
-
-Possible mileage units:
-
-KM indicators:
-km
-kilometers
-км
-тис. км
-тыс. км
-
-MILES indicators:
-mile
-miles
-mi
-миль
-тыс. миль
-
+Spain (ES):
+• 1234 ABC
 
 Rules:
+• preserve spaces/hyphens exactly as seen
+• if partially visible → return partial string
+• do NOT reconstruct hidden characters
+• if multiple plates → take clearest one
 
-If unit contains:
-
-mile / miles / mi / миль / тыс. миль
-
-→ mileage_unit = "miles"
-
-If unit contains:
-
-km / kilometers / км / тыс. км
-
-→ mileage_unit = "km"
-
-If unit is not clearly visible:
-
-mileage_unit = ""
-
+Store in:
+"license_plate"
 
 ------------------------------------------------
-MILEAGE NORMALIZATION
+VIN
 ------------------------------------------------
-
-Mileage may be written using thousand indicators.
-
-If mileage contains:
-
-• "тыс"
-• "тис"
-• "k"
-• "K"
-
-Multiply number by 1000.
-
-Examples:
-
-171 тыс. км → mileage = 171000  
-171 тыс. миль → mileage = 171000  
-171k km → mileage = 171000  
-171k miles → mileage = 171000
-
-
-------------------------------------------------
-LICENSE PLATE EXTRACTION
-------------------------------------------------
-
-Detect license plates from:
-
-• vehicle photos
-• advertisement screenshots
+Extract from:
+• windshield
+• dashboard
+• door frame
 • documents
 
-Extract exact characters.
-
-Store inside:
-
-license_plate
-
+17-char if full, otherwise partial
 
 ------------------------------------------------
-VIN EXTRACTION
+INSPECTION
 ------------------------------------------------
+Detect:
+NCT, MOT, TÜV, ITV, APK, HU
 
-Look for VIN numbers in:
-
-• windshield VIN plate
-• dashboard VIN plate
-• door frame sticker
-• documents
-
-VIN must match 17-character VIN format.
-
-If partial VIN visible → return partial string.
-
+Extract type + validity date
 
 ------------------------------------------------
-INSPECTION STICKERS
+STRICT NO-INFERENCE
 ------------------------------------------------
-
-Detect inspection systems such as:
-
-• NCT
-• MOT
-• TÜV
-• ITV
-• APK
-• HU
-
-Extract:
-
-sticker type  
-validity date if visible
-
+Do NOT infer:
+• seller_type
+• country
+• engine type
+• trim
+• mileage from wear
+• accident history
 
 ------------------------------------------------
-VISUAL INSPECTION PROTOCOL
+FIELD MAPPING
 ------------------------------------------------
-
-Inspect ALL visible vehicle photos.
-
-Report ONLY clearly visible issues.
-
+Correct field mapping only
+Ambiguous → empty
 
 ------------------------------------------------
-EXTERIOR DAMAGE DETECTION
+MILEAGE
+------------------------------------------------
+Detect value + unit
+
+Units:
+km → "km"
+mile/mi → "miles"
+
+"k", "тыс", "тис" → ×1000
+
+------------------------------------------------
+VISUAL INSPECTION (HIGH PRECISION)
 ------------------------------------------------
 
-Look for:
+ONLY clearly visible issues
 
-• scratches
+EXTERIOR:
+• scratches (even very small)
 • dents
 • paint chips
-• rust spots
-• repaint signs
-• bumper damage
-• door damage
-• hood damage
-• roof damage
-• trunk damage
+• rust
+• repaint signs (color mismatch, uneven gloss)
+• bumper / door / hood / roof / trunk damage
 • missing parts
+• bird droppings, stains, neglect signs
 
-If visible add to:
-
-visible_damages
-
-Damage format:
-
+Format:
 {
 "type": "",
 "location": "",
-"severity": ""
+"severity": "minor|moderate|major"
 }
 
-Severity values:
+PAINT:
+→ paint_inconsistencies = true if mismatch
 
-minor  
-moderate  
-major
+PANELS:
+→ panel_gap_issues = true if misaligned
 
+LIGHTS / GLASS:
+→ cracks, chips, fogging
 
-------------------------------------------------
-PAINT CONSISTENCY
-------------------------------------------------
-
-Detect:
-
-• color mismatch
-• repaint signs
-• uneven reflections
-
-If visible:
-
-paint_inconsistencies = true
-
-
-------------------------------------------------
-PANEL ALIGNMENT
-------------------------------------------------
-
-Check for:
-
-• uneven panel gaps
-• misaligned doors
-• misaligned hood
-
-If visible:
-
-panel_gap_issues = true
-
-
-------------------------------------------------
-LIGHTS AND GLASS
-------------------------------------------------
-
-Inspect:
-
-• headlights
-• taillights
-• windows
-• windshield
-
-Detect:
-
-• cracks
-• fogging
-• broken lights
-• chipped glass
-
-
-------------------------------------------------
-WHEELS AND TIRES
-------------------------------------------------
-
-If wheels visible inspect:
-
-• tire wear
+WHEELS / TIRES:
+• tread wear
 • uneven wear
-• damaged rims
+• bald tires
+• rim damage
+→ tire_condition
 
-Return short description in:
-
-tire_condition
+INTERIOR:
+• steering wheel wear (low/moderate/heavy)
+• seats (damage, cracks, deformation)
+• pedals (low/moderate/heavy)
+• dashboard, buttons wear
+• stains, burns
 
 
 ------------------------------------------------
-INTERIOR INSPECTION
+ACCIDENT / REPAIR INDICATORS (ADVANCED)
 ------------------------------------------------
 
-If interior photos exist inspect:
+Detect signs of past accident or repair, even if well done.
 
-• steering wheel
-• seats
-• pedals
-• dashboard
+DO NOT state "accident" directly.
+ONLY report observable indicators.
 
+Look for:
 
-STEERING WHEEL wear levels:
+BODY:
+• inconsistent panel gaps across sides
+• asymmetry between left/right panels
+• misaligned hood, trunk, doors
 
-low wear  
-moderate wear  
-heavy wear
+PAINT:
+• color shade differences between panels
+• uneven gloss or reflections
+• orange peel texture differences
+• dust under paint
 
+REFLECTIONS:
+• distorted reflections (waves, bending lines)
 
-SEATS:
+FASTENERS:
+• scratched or worn bolts (hood, fenders, doors)
+• tool marks indicating disassembly
 
-Detect:
+LIGHTS:
+• different headlight aging
+• mismatched brands or clarity
 
-• fabric damage
-• leather cracks
-• heavy wear
-• seat deformation
+GLASS:
+• different production markings on windows
 
+INTERIOR:
+• airbag cover misalignment
+• dashboard gaps or deformation
 
-PEDALS wear levels:
+If detected:
+add to "inconsistencies" or visible_damages as:
 
-low wear  
-moderate wear  
-heavy wear
-
+{
+"type": "repair_indicator",
+"location": "",
+"details": ""
+}
 
 ------------------------------------------------
 INCONSISTENCIES
 ------------------------------------------------
-
-Report ONLY objective contradictions such as:
-
-• two different mileages
-• conflicting vehicle years
+Only objective:
+• mileage mismatch
+• year mismatch
 • multiple prices
 
-Do NOT speculate.
-
+------------------------------------------------
+CONFIDENCE
+------------------------------------------------
+0.0–1.0 based on clarity + completeness
 
 ------------------------------------------------
-CONFIDENCE LEVEL
-------------------------------------------------
-
-Return value between:
-
-0.0 – 1.0
-
-Based on:
-
-• OCR clarity
-• number of extracted fields
-• image quality
-• visual inspection certainty
-
-
-------------------------------------------------
-REQUIRED JSON STRUCTURE
+JSON STRUCTURE
 ------------------------------------------------
 
 {
@@ -532,19 +324,7 @@ REQUIRED JSON STRUCTURE
 
 "inconsistencies": [],
 "raw_text_extracted": ""
-}
-
-
-------------------------------------------------
-FINAL RULE
-------------------------------------------------
-
-Return ONLY valid JSON.
-
-No explanations.  
-No markdown.  
-No comments.
-"""
+}"""
 
 PROMPTS_GPT4V = {
 "uk": PHOTO_EXTRACTION_PROMPT_EN,
@@ -554,6 +334,31 @@ PROMPTS_GPT4V = {
 "pt": PHOTO_EXTRACTION_PROMPT_EN,
 "tr": PHOTO_EXTRACTION_PROMPT_EN
 }
+
+PLATE_DECODER_PROMPT_EN = """You are a license plate decoder for EU countries and the United Kingdom (including England).
+
+Task:
+Given ONE plate string, decode only explicitly recognizable information.
+
+Return ONLY JSON:
+{
+    "country": "",
+    "region": "",
+    "year": null,
+    "confidence": 0.0
+}
+
+Rules:
+- Supported scope: EU + UK.
+- If uncertain, keep empty values.
+- Never invent missing characters.
+- For UK/England plates: country must be "United Kingdom". Region may be "England", "Scotland", "Wales", "Northern Ireland", or "".
+- For Irish split-year formats like 131-D-12345 or 231-D-12345, decode registration year (2013/2023).
+- year must be YYYY or null.
+- confidence in range 0.0..1.0.
+
+Return ONLY valid JSON.
+"""
 ocr_paddle = None
 clip_model = None
 clip_processor = None
@@ -938,6 +743,68 @@ def extract_plate_info(number_plate: str) -> dict:
 
     # --- Default: якщо нічого не знайдено ---
     return info
+
+
+def decode_plate_eu_uk_with_gpt(number_plate: str) -> dict:
+    if not number_plate or not str(number_plate).strip():
+        return {}
+
+    plate_text = str(number_plate).strip()
+    try:
+        response = openai.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": PLATE_DECODER_PROMPT_EN},
+                {"role": "user", "content": f"Plate: {plate_text}"},
+            ],
+            max_tokens=180,
+            temperature=0.0,
+            top_p=1.0,
+        )
+
+        text = (response.choices[0].message.content or "").strip()
+        if text.startswith("```"):
+            text = re.sub(r"^```[a-zA-Z]*\s*", "", text)
+            text = re.sub(r"\s*```$", "", text)
+
+        parsed = json.loads(text)
+        if not isinstance(parsed, dict):
+            return {}
+
+        country = (parsed.get("country") or "").strip()
+        region = (parsed.get("region") or "").strip()
+        year = parsed.get("year")
+        confidence = parsed.get("confidence")
+
+        try:
+            year = int(year) if year is not None and str(year).strip() else None
+        except Exception:
+            year = None
+        if year is not None and not (1980 <= year <= 2035):
+            year = None
+
+        try:
+            confidence = float(confidence)
+        except Exception:
+            confidence = 0.0
+        if confidence < 0.0:
+            confidence = 0.0
+        if confidence > 1.0:
+            confidence = 1.0
+
+        c_l = country.lower()
+        if c_l in {"uk", "u.k.", "great britain", "britain", "england"}:
+            country = "United Kingdom"
+
+        return {
+            "country": country,
+            "region": region,
+            "year": year,
+            "confidence": confidence,
+        }
+    except Exception as e:
+        print(f"WARN: decode_plate_eu_uk_with_gpt failed: {e}")
+        return {}
 
 def gpt4v_extract_all(image: Image.Image, user_lang: str = 'uk') -> tuple[dict, str]:
     """Витягує і структуровані дані, і весь текст в одному запиті. Підтримує мультимовні промпти."""
@@ -1800,14 +1667,25 @@ async def analyze_ad_from_images(image_bytes_list, user_lang='uk'):
         plate_for_info = merged_data.get("license_plate") or ""
         if plate_for_info:
             plate_info = extract_plate_info(str(plate_for_info)) or {}
+            gpt_plate_info = decode_plate_eu_uk_with_gpt(str(plate_for_info)) or {}
+
             plate_year = plate_info.get("year")
-            plate_country = plate_info.get("country")
+            if not isinstance(plate_year, int):
+                gpt_year = gpt_plate_info.get("year")
+                if isinstance(gpt_year, int):
+                    plate_year = gpt_year
+
+            plate_country = plate_info.get("country") or gpt_plate_info.get("country")
+            plate_region = plate_info.get("region") or gpt_plate_info.get("region")
+
             current_year = _safe_int(merged_data.get("year"))
             if isinstance(plate_year, int) and 1980 <= plate_year <= 2035:
                 if current_year is None or abs(current_year - plate_year) >= 1:
                     _set_if_better("year", plate_year, source_quality=60.0)
             if not merged_data.get("country") and isinstance(plate_country, str) and plate_country.strip():
                 _set_if_better("country", plate_country.strip(), source_quality=20.0)
+            if isinstance(plate_region, str) and plate_region.strip() and not merged_data.get("plate_region"):
+                _set_if_better("plate_region", plate_region.strip(), source_quality=10.0)
 
         # Final anti-hallucination normalization for numeric core fields.
         normalized_year = _safe_int(merged_data.get("year"))
