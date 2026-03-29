@@ -689,6 +689,20 @@ def extract_site_data_universal(url: str) -> dict:
     
 
 async def gpt_full_analysis_4o(site_data: dict, country: str, language: str = "uk", summary_only: bool = False) -> str:
+    raw_data = site_data.get("raw_extracted") if isinstance(site_data, dict) else None
+    if raw_data is not None:
+        print("RAW EXTRACTED:", raw_data)
+    print("FINAL AFTER MERGE:", site_data if isinstance(site_data, dict) else {})
+    print("🧠 FINAL DATA BEFORE GPT:", site_data if isinstance(site_data, dict) else {})
+
+    _data = site_data if isinstance(site_data, dict) else {}
+    if not _data.get("year"):
+        print("⚠ ERROR: YEAR LOST BEFORE GPT")
+    if not _data.get("price"):
+        print("⚠ ERROR: PRICE LOST BEFORE GPT")
+    if not (_data.get("mileage") or _data.get("mileage_km") or _data.get("mileage_miles")):
+        print("⚠ ERROR: MILEAGE LOST BEFORE GPT")
+
     # --- 1. Витягуємо структуровані дані ---
     auto_title = site_data.get("brand_model", "") or site_data.get("title", "")
     auto_price = site_data.get("price", "")
@@ -2118,24 +2132,24 @@ async def handle_message(message: types.Message):
         await message.reply(f"Не вдалося обробити посилання: {e}")
 
 TRANSLATED_SCREENSHOT_TEXT = {
-    "uk": "На жаль, не вдалося прочитати оголошення, тому що сайт блокує збір даних. Повторіть спробу, відправивши посилання ще раз, і якщо результат буде той самий — зробіть до 12 скриншотів оголошення (вид авто спереду, водійська частина салону, опис, пробіг, ціна, історія тощо) та надішліть їх через кнопку «Аналіз по фото».\n\n📌 Правила: доступно максимум 3 аналізи авто на день і максимум 12 скриншотів для одного аналізу.",
-    "ru": "К сожалению, не удалось прочитать объявление, потому что сайт блокирует сбор данных. Повторите попытку, отправив ссылку ещё раз, и если результат будет тем же — сделайте до 12 скриншотов объявления (вид авто спереди, водительская часть салона, описание, пробег, цена, история и т. д.) и отправьте их через кнопку «Анализ по фото».\n\n📌 Правила: доступно максимум 3 анализа авто в день и максимум 12 скриншотов для одного анализа.",
-    "en": "Unfortunately, we couldn’t read the listing because the website is blocking data collection. Please try sending the link again, and if the result is the same — take up to 12 screenshots of the listing (front view, driver area, description, mileage, price, history, etc.) and send them using the “Photo Analysis” button.\n\n📌 Rules: maximum 3 car analyses per day and up to 12 screenshots for one analysis.",
-    "es": "Lamentablemente, no se pudo leer el anuncio porque el sitio web bloquea la recopilación de datos. Intenta enviar el enlace nuevamente y, si el resultado es el mismo, toma hasta 12 capturas de pantalla del anuncio (vista frontal, zona del conductor, descripción, kilometraje, precio, historial, etc.) y envíalas con el botón «Análisis por foto».\n\n📌 Reglas: máximo 3 análisis de autos por día y hasta 12 capturas para un análisis.",
-    "pt": "Infelizmente, não foi possível ler o anúncio porque o site bloqueia a coleta de dados. Tente enviar o link novamente e, se o resultado for o mesmo, tire até 12 capturas de tela do anúncio (vista frontal, área do condutor, descrição, quilometragem, preço, histórico etc.) e envie pelo botão «Análise por foto».\n\n📌 Regras: máximo de 3 análises de carros por dia e até 12 capturas para uma análise.",
-    "tr": "Ne yazık ki ilan okunamadı çünkü site veri toplamayı engelliyor. Lütfen bağlantıyı tekrar gönderin; sonuç aynı olursa ilanın en fazla 12 ekran görüntüsünü alın (ön görünüm, sürücü bölümü, açıklama, kilometre, fiyat, geçmiş vb.) ve «Fotoğrafla Analiz» düğmesiyle gönderin.\n\n📌 Kurallar: günde en fazla 3 araç analizi ve bir analiz için en fazla 12 ekran görüntüsü.",
+    "uk": "На жаль, не вдалося прочитати оголошення, тому що сайт блокує збір даних. Повторіть спробу, відправивши посилання ще раз, і якщо результат буде той самий — зробіть до 12 скриншотів оголошення (вид авто спереду, водійська частина салону, опис, пробіг, ціна, історія тощо) та надішліть їх через кнопку «Аналіз по фото».\n\n📌 Правила: доступно максимум 10 аналізів авто на день і максимум 12 скриншотів для одного аналізу.",
+    "ru": "К сожалению, не удалось прочитать объявление, потому что сайт блокирует сбор данных. Повторите попытку, отправив ссылку ещё раз, и если результат будет тем же — сделайте до 12 скриншотов объявления (вид авто спереди, водительская часть салона, описание, пробег, цена, история и т. д.) и отправьте их через кнопку «Анализ по фото».\n\n📌 Правила: доступно максимум 10 анализов авто в день и максимум 12 скриншотов для одного анализа.",
+    "en": "Unfortunately, we couldn’t read the listing because the website is blocking data collection. Please try sending the link again, and if the result is the same — take up to 12 screenshots of the listing (front view, driver area, description, mileage, price, history, etc.) and send them using the “Photo Analysis” button.\n\n📌 Rules: maximum 10 car analyses per day and up to 12 screenshots for one analysis.",
+    "es": "Lamentablemente, no se pudo leer el anuncio porque el sitio web bloquea la recopilación de datos. Intenta enviar el enlace nuevamente y, si el resultado es el mismo, toma hasta 12 capturas de pantalla del anuncio (vista frontal, zona del conductor, descripción, kilometraje, precio, historial, etc.) y envíalas con el botón «Análisis por foto».\n\n📌 Reglas: máximo 10 análisis de autos por día y hasta 12 capturas para un análisis.",
+    "pt": "Infelizmente, não foi possível ler o anúncio porque o site bloqueia a coleta de dados. Tente enviar o link novamente e, se o resultado for o mesmo, tire até 12 capturas de tela do anúncio (vista frontal, área do condutor, descrição, quilometragem, preço, histórico etc.) e envie pelo botão «Análise por foto».\n\n📌 Regras: máximo de 10 análises de carros por dia e até 12 capturas para uma análise.",
+    "tr": "Ne yazık ki ilan okunamadı çünkü site veri toplamayı engelliyor. Lütfen bağlantıyı tekrar gönderin; sonuç aynı olursa ilanın en fazla 12 ekran görüntüsünü alın (ön görünüm, sürücü bölümü, açıklama, kilometre, fiyat, geçmiş vb.) ve «Fotoğrafla Analiz» düğmesiyle gönderin.\n\n📌 Kurallar: günde en fazla 10 araç analizi ve bir analiz için en fazla 12 ekran görüntüsü.",
 }
 
 @dp.message(lambda m: m.content_type in ['photo', 'document', 'video', 'animation'] or m.forward_from_chat)
 async def handle_media_or_forward(message: types.Message):
     lang = (getattr(message.from_user, "language_code", None) or "uk")[:2]
     media_hint = {
-        "uk": "Для аналізу фото або скріншотів скористайтесь кнопкою нижче.\n\n📌 Правила: максимум 3 аналізи авто на день і максимум 12 скриншотів для одного аналізу.",
-        "ru": "Для анализа фото или скриншотов используйте кнопку ниже.\n\n📌 Правила: максимум 3 анализа авто в день и максимум 12 скриншотов для одного анализа.",
-        "en": "Use the button below for photo/screenshot analysis.\n\n📌 Rules: maximum 3 car analyses per day and up to 12 screenshots for one analysis.",
-        "es": "Usa el botón de abajo para analizar fotos o capturas.\n\n📌 Reglas: máximo 3 análisis de autos por día y hasta 12 capturas para un análisis.",
-        "pt": "Use o botão abaixo para analisar fotos ou capturas.\n\n📌 Regras: máximo de 3 análises de carros por dia e até 12 capturas para uma análise.",
-        "tr": "Fotoğraf/ekran görüntüsü analizi için aşağıdaki düğmeyi kullanın.\n\n📌 Kurallar: günde en fazla 3 araç analizi ve bir analiz için en fazla 12 ekran görüntüsü.",
+        "uk": "Для аналізу фото або скріншотів скористайтесь кнопкою нижче.\n\n📌 Правила: максимум 10 аналізів авто на день і максимум 12 скриншотів для одного аналізу.",
+        "ru": "Для анализа фото или скриншотов используйте кнопку ниже.\n\n📌 Правила: максимум 10 анализов авто в день и максимум 12 скриншотов для одного анализа.",
+        "en": "Use the button below for photo/screenshot analysis.\n\n📌 Rules: maximum 10 car analyses per day and up to 12 screenshots for one analysis.",
+        "es": "Usa el botón de abajo para analizar fotos o capturas.\n\n📌 Reglas: máximo 10 análisis de autos por día y hasta 12 capturas para un análisis.",
+        "pt": "Use o botão abaixo para analisar fotos ou capturas.\n\n📌 Regras: máximo de 10 análises de carros por dia e até 12 capturas para uma análise.",
+        "tr": "Fotoğraf/ekran görüntüsü analizi için aşağıdaki düğmeyi kullanın.\n\n📌 Kurallar: günde en fazla 10 araç analizi ve bir analiz için en fazla 12 ekran görüntüsü.",
     }
     await message.reply(
         media_hint.get(lang, media_hint["uk"]),

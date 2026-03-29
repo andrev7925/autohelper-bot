@@ -5,6 +5,11 @@ from keyboards.analyze_ad import get_analyze_car_submenu
 from states import AnalyzeAdStates, CalcExpensesStates
 from data.languages import get_expense_translation
 from utils.gpt_expense import gpt_expense_analysis  # Додаємо імпорт GPT-калькулятора
+from feature_flags import USE_NEW_PIPELINE
+from ai_core.context.market_loader import get_context as get_market_context
+from ai_core.pipeline.normalizer import normalize_vehicle_data
+from ai_core.engines.cost_engine import calculate_ownership_cost
+from ai_core.prompts.cost_prompt import build_cost_summary
 
 router = Router()
 
@@ -59,7 +64,13 @@ async def handle_expense_selecting(message: types.Message, state: FSMContext):
             if not country:
                 await message.answer("Будь ласка, оберіть країну для коректного розрахунку витрат.")
                 return
-            msg = await gpt_expense_analysis(car, country)
+            if USE_NEW_PIPELINE:
+                market_context = get_market_context(country)
+                normalized = normalize_vehicle_data(car, market_context)
+                cost = calculate_ownership_cost(normalized, market_context)
+                msg = build_cost_summary(normalized, cost, market_context.get("currency", "EUR"))
+            else:
+                msg = await gpt_expense_analysis(car, country)
             await message.answer(msg)
         except Exception as e:
             await message.answer(f"Виникла помилка при розрахунку: {e}")

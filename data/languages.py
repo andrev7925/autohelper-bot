@@ -1,6 +1,7 @@
 from aiogram import types
 import json
 import os
+from copy import deepcopy
 
 LANG_FILE = "user_languages.json"
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
@@ -25,7 +26,9 @@ LANGUAGES = {
     "🇬🇧 English": "en",
     "🇪🇸 Español": "es",
     "🇵🇹 Português": "pt",
-    "🇹🇷 Türkçe": "tr"
+    "🇹🇷 Türkçe": "tr",
+    "🇫🇷 Français": "fr",
+    "🇩🇪 Deutsch": "de",
 }
 COUNTRIES = {
     "uk": [
@@ -957,5 +960,27 @@ def get_expense_translation(lang: str) -> Dict[str, str]:
         }
     }
     return translations.get(lang, translations["uk"])
+
+
+def _add_fr_de_fallbacks() -> None:
+    base_langs = {"uk", "en", "ru", "es", "pt", "tr"}
+    for value in globals().values():
+        if not isinstance(value, dict):
+            continue
+
+        keys = set(value.keys())
+        if len(keys & base_langs) < 3:
+            continue
+
+        fallback_fr = value.get("en", value.get("uk"))
+        fallback_de = value.get("en", value.get("uk"))
+
+        if "fr" not in value and fallback_fr is not None:
+            value["fr"] = deepcopy(fallback_fr)
+        if "de" not in value and fallback_de is not None:
+            value["de"] = deepcopy(fallback_de)
+
+
+_add_fr_de_fallbacks()
 
     

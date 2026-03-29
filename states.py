@@ -17,3 +17,7 @@ class AnalyzeAdStates(StatesGroup):
 class CalcExpensesStates(StatesGroup):
     waiting_for_car = State()
     selecting = State()  # ← Додай цей стан!
+
+
+class CarQuizStates(StatesGroup):
+    answering = State()

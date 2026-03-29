@@ -108,6 +108,8 @@ from states import AnalyzeAdStates
 from utils.gpt import ask_gpt
 from config import OPENAI_API_KEY
 from utils.telegram_messages import send_long_message
+from feature_flags import USE_NEW_PIPELINE
+from ai_core.engines.compare_engine import run_compare_engine
 
 @router.message(CompareCarsStates.selecting, lambda m: m.text == "Назад")
 async def back_in_compare_selecting(message: types.Message, state: FSMContext):
@@ -138,8 +140,17 @@ async def handle_compare_selecting(message: types.Message, state: FSMContext):
         selected = data.get("selected_cars", [])
         if selected:
             processing_msg = await message.answer("⏳ Обробляється інформація, зачекайте декілька секунд...")
-            prompt = get_compare_prompt(lang, selected)
-            gpt_answer = await ask_gpt(prompt, OPENAI_API_KEY)
+            if USE_NEW_PIPELINE:
+                try:
+                    country_code = (selected[0].get("country") if isinstance(selected[0], dict) else "") or "ie"
+                    gpt_answer = await run_compare_engine(selected, country_code=country_code, language=lang)
+                except Exception as pipeline_err:
+                    print(f"WARN: new compare pipeline failed, fallback to old flow: {pipeline_err}")
+                    prompt = get_compare_prompt(lang, selected)
+                    gpt_answer = await ask_gpt(prompt, OPENAI_API_KEY)
+            else:
+                prompt = get_compare_prompt(lang, selected)
+                gpt_answer = await ask_gpt(prompt, OPENAI_API_KEY)
             await send_long_message(message, gpt_answer)
             await processing_msg.delete()
         else:

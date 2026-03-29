@@ -1,0 +1,21 @@
+make,model,body_type,fuel,transmission,year_from,year_to,median_price,typical_mileage,sample_size,country,last_updated
+Volkswagen,Golf,Hatchback,Diesel,Manual,2014,2016,10200,185000,25,Ireland,2026-03-01
+Volkswagen,Golf,Hatchback,Petrol,Automatic,2018,2020,16500,90000,18,Ireland,2026-03-01
+Volkswagen,Passat,Sedan,Diesel,Manual,2015,2017,12800,190000,20,Ireland,2026-03-01
+Volkswagen,Passat,Sedan,Diesel,Automatic,2018,2020,18900,120000,15,Ireland,2026-03-01
+Toyota,Corolla,Sedan,Petrol,Automatic,2017,2019,15500,85000,22,Ireland,2026-03-01
+Toyota,Corolla,Sedan,Hybrid,Automatic,2020,2022,22500,50000,20,Ireland,2026-03-01
+Ford,Focus,Hatchback,Diesel,Manual,2015,2017,9800,170000,20,Ireland,2026-03-01
+BMW,3 Series,Sedan,Diesel,Automatic,2016,2018,18500,140000,15,Ireland,2026-03-01
+Audi,A4,Sedan,Diesel,Manual,2015,2017,17000,150000,15,Ireland,2026-03-01
+Hyundai,Tucson,SUV,Diesel,Manual,2016,2018,16500,120000,20,Ireland,2026-03-01
+Kia,Sportage,SUV,Diesel,Manual,2016,2018,16000,130000,18,Ireland,2026-03-01
+Nissan,Qashqai,SUV,Diesel,Manual,2015,2017,13500,140000,22,Ireland,2026-03-01
+Skoda,Octavia,Sedan,Diesel,Manual,2015,2017,11500,180000,20,Ireland,2026-03-01
+Peugeot,308,Hatchback,Diesel,Manual,2015,2017,9000,170000,18,Ireland,2026-03-01
+Renault,Megane,Hatchback,Diesel,Manual,2016,2018,9500,160000,15,Ireland,2026-03-01
+Opel,Astra,Hatchback,Diesel,Manual,2015,2017,8800,165000,20,Ireland,2026-03-01
+Mazda,3,Hatchback,Petrol,Manual,2017,2019,14000,90000,12,Ireland,2026-03-01
+Honda,Civic,Hatchback,Petrol,Manual,2017,2019,15500,80000,12,Ireland,2026-03-01
+Volvo,V40,Hatchback,Diesel,Manual,2015,2017,11500,160000,10,Ireland,2026-03-01
+Tesla,Model 3,Sedan,Electric,Automatic,2019,2021,29500,70000,12,Ireland,2026-03-01

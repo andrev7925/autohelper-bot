@@ -1,5 +1,5 @@
 def get_compare_prompt(lang: str, cars_data: list) -> str:
-    safe_lang = lang if lang in {"uk", "ru", "en", "es", "pt", "tr"} else "en"
+    safe_lang = lang if lang in {"uk", "ru", "en", "es", "pt", "tr", "fr", "de"} else "en"
 
     output_language = {
         "uk": "Ukrainian",
@@ -8,6 +8,8 @@ def get_compare_prompt(lang: str, cars_data: list) -> str:
         "es": "Spanish",
         "pt": "Portuguese",
         "tr": "Turkish",
+        "fr": "French",
+        "de": "German",
     }
 
     section_titles = {
@@ -58,6 +60,22 @@ def get_compare_prompt(lang: str, cars_data: list) -> str:
             "before_buy": "4️⃣ Satın almadan önce ne yapmalı",
             "vehicle": "Araç",
             "decision": "Daha iyi seçim",
+        },
+        "fr": {
+            "diff": "1️⃣ Différences clés",
+            "each": "2️⃣ Explication simple pour chaque voiture",
+            "choice": "3️⃣ Choix final",
+            "before_buy": "4️⃣ Que faire avant l'achat",
+            "vehicle": "Voiture",
+            "decision": "Il vaut mieux choisir",
+        },
+        "de": {
+            "diff": "1️⃣ Wichtige Unterschiede",
+            "each": "2️⃣ Einfache Erklärung pro Fahrzeug",
+            "choice": "3️⃣ Endgültige Wahl",
+            "before_buy": "4️⃣ Was vor dem Kauf zu tun ist",
+            "vehicle": "Fahrzeug",
+            "decision": "Besser wählen",
         },
     }
 

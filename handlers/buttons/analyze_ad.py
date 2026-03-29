@@ -17,9 +17,13 @@ from services.storage import get_user_country
 from keyboards.compare_cars import get_compare_keyboard
 from states import AnalyzeAdStates, MainMenuStates, CalcExpensesStates, CompareCarsStates
 from services.extractors import extract_ad_data
+from ai_core.pipeline.pipeline import run_analysis_pipeline
+from ai_core.context.market_loader import get_context as get_market_context
+from feature_flags import USE_NEW_PIPELINE
 import asyncio
 import json
 from collections import defaultdict
+from copy import deepcopy
 import time
 from image_ad_parser import analyze_ad_from_images, extract_text_from_images
 from utils.telegram_messages import send_long_message
@@ -28,18 +32,20 @@ router = Router()
 
 media_group_buffers = defaultdict(list)
 media_group_timeouts = {}
+media_group_texts = defaultdict(str)
 
-MAX_ANALYSES_PER_USER = 3
+MAX_ANALYSES_PER_USER = 10
 MAX_PHOTOS_PER_REQUEST = 12
 MAX_PREVIEW_PHOTOS = 12
+PREVIEW_LEGACY_FALLBACK_ENABLED = False
 
 LIMIT_ANALYSES_TEXT = {
-    "uk": "⚠️ Ви досягли ліміту: максимум 3 аналізи авто.",
-    "ru": "⚠️ Вы достигли лимита: максимум 3 анализа авто.",
-    "en": "⚠️ You reached the limit: maximum 3 car analyses.",
-    "es": "⚠️ Alcanzaste el límite: máximo 3 análisis de autos.",
-    "pt": "⚠️ Você atingiu o limite: máximo de 3 análises de carros.",
-    "tr": "⚠️ Sınıra ulaştınız: en fazla 3 araç analizi.",
+    "uk": "⚠️ Ви досягли ліміту: максимум 10 аналізів авто.",
+    "ru": "⚠️ Вы достигли лимита: максимум 10 анализов авто.",
+    "en": "⚠️ You reached the limit: maximum 10 car analyses.",
+    "es": "⚠️ Alcanzaste el límite: máximo 10 análisis de autos.",
+    "pt": "⚠️ Você atingiu o limite: máximo de 10 análises de carros.",
+    "tr": "⚠️ Sınıra ulaştınız: en fazla 10 araç analizi.",
 }
 
 LIMIT_PHOTOS_TEXT = {
@@ -291,6 +297,33 @@ ERROR_OCCURRED = {
     "tr": "❌ Bir hata oluştu."
 }
 
+PREVIEW_TEMP_UNAVAILABLE_TEXT = {
+    "uk": (
+        "🔍 Попередній аналіз тимчасово недоступний для цього оголошення через неповні дані.\n\n"
+        "Щоб не втратити важливі ризики, запустіть повний аналітичний AI-звіт — він обробить кейс глибше."
+    ),
+    "ru": (
+        "🔍 Предварительный анализ временно недоступен для этого объявления из-за неполных данных.\n\n"
+        "Чтобы не пропустить важные риски, запустите полный аналитический AI-отчёт — он обработает кейс глубже."
+    ),
+    "en": (
+        "🔍 Preliminary analysis is temporarily unavailable for this listing due to incomplete data.\n\n"
+        "To avoid missing important risks, run the full analytical AI report — it handles this case in more depth."
+    ),
+    "es": (
+        "🔍 El análisis preliminar no está disponible temporalmente para este anuncio por datos incompletos.\n\n"
+        "Para no perder riesgos importantes, ejecuta el informe analítico completo de IA: procesa este caso con mayor profundidad."
+    ),
+    "pt": (
+        "🔍 A análise preliminar está temporariamente indisponível para este anúncio devido a dados incompletos.\n\n"
+        "Para não perder riscos importantes, execute o relatório analítico completo de IA — ele trata este caso com mais profundidade."
+    ),
+    "tr": (
+        "🔍 Bu ilan için ön analiz, eksik veriler nedeniyle geçici olarak kullanılamıyor.\n\n"
+        "Önemli riskleri kaçırmamak için tam analitik AI raporunu çalıştırın — bu durumu daha derin işler."
+    ),
+}
+
 FULL_REPORT_PROGRESS_STEPS = {
     "uk": [
         "⏳ Готуємо повний AI-звіт...",
@@ -349,6 +382,29 @@ FULL_REPORT_BUTTON_TEXT = {
 }
 
 
+def _add_fr_de_fallbacks_local() -> None:
+    base_langs = {"uk", "en", "ru", "es", "pt", "tr"}
+    for value in globals().values():
+        if not isinstance(value, dict):
+            continue
+
+        keys = set(value.keys())
+        if len(keys & base_langs) < 3:
+            continue
+
+        fallback = value.get("en", value.get("uk"))
+        if fallback is None:
+            continue
+
+        if "fr" not in value:
+            value["fr"] = deepcopy(fallback)
+        if "de" not in value:
+            value["de"] = deepcopy(fallback)
+
+
+_add_fr_de_fallbacks_local()
+
+
 def get_full_report_keyboard(lang: str):
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -379,6 +435,265 @@ def get_preview_report_keyboard(lang: str):
             ],
         ]
     )
+
+
+def _soft_validate_before_gpt(data: dict, raw_data=None, stage: str = "unknown"):
+    final_data = data if isinstance(data, dict) else {}
+
+    if raw_data is not None:
+        print("RAW EXTRACTED:", raw_data)
+    print("FINAL AFTER MERGE:", final_data)
+    print("🧠 FINAL DATA BEFORE GPT:", final_data)
+
+    if not final_data.get("year"):
+        print("⚠ ERROR: YEAR LOST BEFORE GPT")
+
+    if not final_data.get("price"):
+        print("⚠ ERROR: PRICE LOST BEFORE GPT")
+
+    if not (final_data.get("mileage") or final_data.get("mileage_km") or final_data.get("mileage_miles")):
+        print("⚠ ERROR: MILEAGE LOST BEFORE GPT")
+
+    print(
+        "DEBUG: SOFT_VALIDATION_STAGE | "
+        f"stage={stage} | year={final_data.get('year')} | "
+        f"price={final_data.get('price')} | mileage={final_data.get('mileage') or final_data.get('mileage_km') or final_data.get('mileage_miles')}"
+    )
+
+
+def _first_url_in_text(text: str) -> str:
+    if not isinstance(text, str):
+        return ""
+    match = re.search(r"https?://\S+", text)
+    if not match:
+        return ""
+    return match.group(0).strip()
+
+
+def _to_clean_int_text(value: str) -> str:
+    cleaned = re.sub(r"[^\d]", "", value or "")
+    return cleaned
+
+
+def _line_bounds(text: str, start: int, end: int) -> tuple[int, int]:
+    line_start = text.rfind("\n", 0, start)
+    line_start = 0 if line_start == -1 else line_start + 1
+    line_end = text.find("\n", end)
+    line_end = len(text) if line_end == -1 else line_end
+    return line_start, line_end
+
+
+def _mileage_multiplier(raw_value: str) -> int:
+    token = str(raw_value or "").strip().lower()
+    if re.search(r"(?:\d\s*[kк]\b|тис\.?|тыс\.?|\bmil\b|\bmille\b|\bbin\b)", token, re.IGNORECASE):
+        return 1000
+    return 1
+
+
+def _normalize_mileage_unit(raw_unit: str) -> str:
+    unit = str(raw_unit or "").strip().lower()
+    km_tokens = {
+        "km", "kms", "км", "kilometer", "kilometers", "kilometre", "kilometres",
+        "kilomètre", "kilomètres", "kilometro", "kilometros", "kilómetro", "kilómetros",
+        "quilometro", "quilometros", "quilómetro", "quilómetros", "kilometreler"
+    }
+    miles_tokens = {
+        "mile", "miles", "mi", "миля", "мили", "миль", "милях",
+        "meile", "meilen", "milla", "millas", "milha", "milhas"
+    }
+    if unit in miles_tokens:
+        return "miles"
+    if unit in km_tokens:
+        return "km"
+    return ""
+
+
+def _parse_listing_text_fallback(text: str) -> dict:
+    raw_text = (text or "").strip()
+    if not raw_text:
+        return {}
+
+    data = {
+        "source": "telegram_text",
+        "text": raw_text,
+    }
+
+    lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
+    if lines:
+        title = lines[0][:120]
+        data["title"] = title
+        data["brand_model"] = title
+
+    year_match = re.search(r"\b(19|20)\d{2}\b", raw_text)
+    if year_match:
+        data["year"] = year_match.group(0)
+
+    inline_amount = r"\d(?:[\d \t\u00a0\u202f.,]*\d)?"
+    price_patterns = [
+        rf"(?:price|prix|preis|ціна|цена|fiyat)\s*[:\-]?\s*({inline_amount})[ \t\u00a0\u202f]*(€|💶|eur|usd|\$|грн|uah)?",
+        rf"({inline_amount})[ \t\u00a0\u202f]*(€|💶|eur|usd|\$|грн|uah)",
+    ]
+
+    tax_words = ["налог", "tax ", "road tax", "податок", "steuer", "impôt", "impot"]
+    price_words = ["price", "prix", "preis", "ціна", "цена", "fiyat"]
+
+    # Спочатку намагаємося знайти ціну з валютою, уникаючи сум податку (налог/road tax)
+    for pattern in price_patterns:
+        for price_match in re.finditer(pattern, raw_text, flags=re.I):
+            start = price_match.start()
+            context_before = raw_text[max(0, start - 25) : start].lower()
+            line_start, line_end = _line_bounds(raw_text, price_match.start(), price_match.end())
+            line_text = raw_text[line_start:line_end].lower()
+            has_explicit_price_label = any(word in line_text for word in price_words)
+            has_tax_in_same_line = any(word in line_text for word in tax_words)
+
+            if has_tax_in_same_line and not has_explicit_price_label:
+                continue
+
+            if any(word in context_before for word in tax_words) and not has_explicit_price_label:
+                # Це, скоріш за все, річний податок, а не ціна авто
+                continue
+
+            price_value = _to_clean_int_text(price_match.group(1))
+            if price_value:
+                data["price"] = price_value
+            currency = (price_match.group(2) or "").strip().upper()
+            if currency in {"€", "💶", "EUR"}:
+                data["currency"] = "EUR"
+            elif currency in {"$", "USD"}:
+                data["currency"] = "USD"
+            elif currency in {"ГРН", "UAH"}:
+                data["currency"] = "UAH"
+            break
+        if data.get("price"):
+            break
+
+    # Якщо ціна все ще не знайдена — шукаємо число біля слів про торг/negotiable
+    if not data.get("price"):
+        trade_match = re.search(
+            r"(\d{3,6})\s*(?:торг|торгуюсь|торг на месте|торг на місці|negotiable|obo|vb|verhandelbar|à\s*d[ée]battre)",
+            raw_text,
+            flags=re.I,
+        )
+        if trade_match:
+            price_value = _to_clean_int_text(trade_match.group(1))
+            if price_value:
+                data["price"] = price_value
+
+    # Якщо валюта не вказана явно, але в тексті є символ/назва валюти — ставимо дефолт
+    if data.get("price") and not data.get("currency"):
+        lowered = raw_text.lower()
+        if "€" in raw_text or "💶" in raw_text or " eur" in lowered:
+            data["currency"] = "EUR"
+        elif "$" in raw_text or " usd" in lowered:
+            data["currency"] = "USD"
+        elif any(token in lowered for token in ["грн", "uah"]):
+            data["currency"] = "UAH"
+
+    mileage_labels = (
+        r"mileage|kilométrage|kilometrage|laufleistung|kilometerstand|пробіг|пробег|"
+        r"kilometraje|quilometragem|quilometragem|km\s*stand|odometer|mesafe|"
+        r"kilometre|kilometres|kilomètre|kilomètres"
+    )
+    mileage_value = r"\d{1,3}(?:[\s.,\u00a0\u202f]?\d{3})+|\d{2,3}(?:[\.,]\d)?\s*(?:k|к|тис\.?|тыс\.?|mil|mille|bin)"
+    mileage_unit = (
+        r"km|kms|км|kilometers?|kilometres?|kilom[eé]tres?|kilometros?|kil[oó]metros?|"
+        r"quilometros?|quil[oô]metros?|mile|miles|mi|миля|мили|миль|милях|meilen|millas|milhas"
+    )
+    mileage_patterns = [
+        rf"(?:{mileage_labels})\s*[:\-]?\s*({mileage_value})\s*({mileage_unit})?",
+        rf"({mileage_value})\s*({mileage_unit})",
+    ]
+    for pattern in mileage_patterns:
+        mileage_match = re.search(pattern, raw_text, flags=re.I)
+        if mileage_match:
+            mileage_raw = (mileage_match.group(1) or "").lower().replace(" ", "")
+            multiplier = _mileage_multiplier(mileage_raw)
+            mileage_number = _to_clean_int_text(mileage_raw)
+            if mileage_number:
+                try:
+                    mileage_value = int(mileage_number) * multiplier
+                    unit = _normalize_mileage_unit(mileage_match.group(2) or "")
+                    if unit == "miles":
+                        data["mileage_miles"] = str(mileage_value)
+                        # Для подальшого аналізу зручно мати пробіг у кілометрах
+                        data["mileage"] = str(int(mileage_value * 1.60934))
+                        data["mileage_unit"] = "miles"
+                    else:
+                        data["mileage"] = str(mileage_value)
+                        data["mileage_unit"] = "km"
+                except Exception:
+                    pass
+            break
+
+    lowered = raw_text.lower()
+    if any(token in lowered for token in ["diesel", "дизель", "дизельний"]):
+        data["fuel_type"] = "diesel"
+    elif any(token in lowered for token in ["petrol", "бензин", "gasoline"]):
+        data["fuel_type"] = "petrol"
+    elif any(token in lowered for token in ["hybrid", "гібрид"]):
+        data["fuel_type"] = "hybrid"
+    elif any(token in lowered for token in ["electric", "електро", "ev"]):
+        data["fuel_type"] = "electric"
+
+    return data
+
+
+def _merge_site_data(base_data: dict, extra_data: dict) -> dict:
+    result = dict(base_data or {})
+    extra = extra_data or {}
+
+    for key, value in extra.items():
+        if value in (None, "", [], {}):
+            continue
+
+        if key == "text":
+            existing_text = str(result.get("text") or "").strip()
+            incoming_text = str(value).strip()
+            if incoming_text and incoming_text not in existing_text:
+                result["text"] = f"{existing_text}\n\n{incoming_text}".strip() if existing_text else incoming_text
+            continue
+
+        existing_value = result.get(key)
+        if existing_value in (None, "", [], {}):
+            result[key] = value
+
+    return result
+
+
+def _looks_like_listing_text(text: str) -> bool:
+    content = (text or "").strip()
+    if len(content) < 40:
+        return False
+    if _first_url_in_text(content):
+        return True
+    keywords = [
+        "price", "prix", "preis", "ціна", "цена", "пробіг", "пробег", "mileage", "kilométrage", "kilometrage", "laufleistung", "km", "км", "year", "рік", "год",
+        "diesel", "petrol", "vin", "eur", "usd", "€",
+    ]
+    lowered = content.lower()
+    return any(token in lowered for token in keywords)
+
+
+async def _extract_site_data_from_message_text(text: str) -> dict:
+    raw_text = (text or "").strip()
+    if not raw_text:
+        return {}
+
+    url = _first_url_in_text(raw_text)
+    url_data = {}
+    if url:
+        try:
+            url_data = await extract_ad_data(url)
+        except Exception as parse_url_err:
+            print(f"WARN: _extract_site_data_from_message_text url parse failed: {parse_url_err}")
+            url_data = {}
+
+    text_data = _parse_listing_text_fallback(raw_text)
+    merged = _merge_site_data(url_data if isinstance(url_data, dict) else {}, text_data)
+    if url and merged.get("source") in (None, "", "telegram_text"):
+        merged["source"] = url
+    return merged
 
 
 def split_summary_and_full_report(report_text: str) -> tuple[str, str]:
@@ -518,6 +833,10 @@ async def handle_link_or_back(message: types.Message, state: FSMContext):
         await process_ad_message(message, state)
         return
 
+    if _looks_like_listing_text(text):
+        await process_ad_message(message, state)
+        return
+
     # Якщо не посилання і не "Назад"
     await message.answer(SEND_LINK_OR_BACK_TEXT.get(lang, SEND_LINK_OR_BACK_TEXT["uk"]))
 
@@ -556,7 +875,10 @@ async def process_ad_message(message: types.Message, state: FSMContext):
     try:
         country = get_user_country(str(user_id)) or "Україна"  # <-- тут str OK, бо get_user_country приймає str
         print(f"DEBUG: process_ad_message context | country={country}")
-        site_data = await extract_ad_data(text)
+        if is_url(text):
+            site_data = await extract_ad_data(text)
+        else:
+            site_data = await _extract_site_data_from_message_text(text)
         site_text = site_data.get("text", "")
         print(
             "DEBUG: extract_ad_data result | "
@@ -565,7 +887,7 @@ async def process_ad_message(message: types.Message, state: FSMContext):
         )
 
         KEYWORDS = [
-            "пробіг", "цена", "ціну", "грн", "eur", "usd", "km", "fiyat", "price", "model", "motor", "engine",
+            "пробіг", "цена", "ціну", "грн", "eur", "usd", "km", "fiyat", "price", "prix", "preis", "mileage", "kilométrage", "laufleistung", "model", "motor", "engine",
             "двигун", "мотор", "şanzıman", "gearbox", "owners", "власник", "owner", "sahip"
         ]
         if (
@@ -605,7 +927,22 @@ async def process_ad_message(message: types.Message, state: FSMContext):
             await progress_task
             return
 
-        result_text = await gpt_full_analysis_4o(site_data, country, lang, summary_only=True)
+        if USE_NEW_PIPELINE:
+            try:
+                _soft_validate_before_gpt(site_data, raw_data=site_data, stage="link_preview_pipeline")
+                result_text = await run_analysis_pipeline(site_data, country, mode="preview", language=lang)
+            except Exception as pipeline_err:
+                print(f"WARN: new preview pipeline failed | mode=link | err={pipeline_err}")
+                if PREVIEW_LEGACY_FALLBACK_ENABLED:
+                    print("WARN: preview legacy fallback enabled | mode=link")
+                    _soft_validate_before_gpt(site_data, raw_data=site_data, stage="link_preview_legacy_fallback")
+                    result_text = await gpt_full_analysis_4o(site_data, country, lang, summary_only=True)
+                else:
+                    print("WARN: preview legacy fallback disabled | mode=link")
+                    result_text = PREVIEW_TEMP_UNAVAILABLE_TEXT.get(lang, PREVIEW_TEMP_UNAVAILABLE_TEXT["uk"])
+        else:
+            _soft_validate_before_gpt(site_data, raw_data=site_data, stage="link_preview_legacy")
+            result_text = await gpt_full_analysis_4o(site_data, country, lang, summary_only=True)
         print(
             "DEBUG: gpt_full_analysis_4o returned(link) | "
             f"type={type(result_text)} | len={len(result_text) if isinstance(result_text, str) else 0} | "
@@ -782,7 +1119,17 @@ async def show_full_ai_report_callback(callback: types.CallbackQuery, state: FSM
                 summary_for_expand = current_car.get("analyze_text") or ""
 
             print("DEBUG: show_full_ai_report_callback | primary heavy full generation...")
-            full_report = await gpt_full_analysis_4o(site_data, country, input_lang, summary_only=False)
+            if USE_NEW_PIPELINE:
+                try:
+                    _soft_validate_before_gpt(site_data, raw_data=data.get("current_car"), stage="full_report_pipeline")
+                    full_report = await run_analysis_pipeline(site_data, country, mode="pro", language=input_lang)
+                except Exception as pipeline_err:
+                    print(f"WARN: new pro pipeline failed, fallback to old flow: {pipeline_err}")
+                    _soft_validate_before_gpt(site_data, raw_data=data.get("current_car"), stage="full_report_legacy_fallback")
+                    full_report = await gpt_full_analysis_4o(site_data, country, input_lang, summary_only=False)
+            else:
+                _soft_validate_before_gpt(site_data, raw_data=data.get("current_car"), stage="full_report_legacy")
+                full_report = await gpt_full_analysis_4o(site_data, country, input_lang, summary_only=False)
 
             if (not full_report or not isinstance(full_report, str)
                 or full_report.startswith("⚠️") or full_report.startswith("❌") or full_report.startswith("⏳")):
@@ -846,6 +1193,13 @@ async def handle_photo_or_album(message: types.Message, state: FSMContext):
     # --- Підтримка медіагруп ---
     if message.media_group_id:
         buf = media_group_buffers[message.media_group_id]
+        incoming_text = (message.caption or message.text or "").strip()
+        if incoming_text:
+            existing_group_text = media_group_texts.get(message.media_group_id, "")
+            if incoming_text not in existing_group_text:
+                media_group_texts[message.media_group_id] = (
+                    f"{existing_group_text}\n\n{incoming_text}".strip() if existing_group_text else incoming_text
+                )
         # Додаємо фото/документ у буфер
         if message.photo:
             file_id = message.photo[-1].file_id
@@ -866,8 +1220,11 @@ async def handle_photo_or_album(message: types.Message, state: FSMContext):
 
         if time.time() - media_group_timeouts[message.media_group_id] > 1:
             images = buf.copy()
+            listing_text = media_group_texts.get(message.media_group_id, "")
             del media_group_buffers[message.media_group_id]
             del media_group_timeouts[message.media_group_id]
+            if message.media_group_id in media_group_texts:
+                del media_group_texts[message.media_group_id]
             if not images:
                 await message.answer("Будь ласка, надішліть скріншоти як фото або зображення-документи.")
                 return
@@ -875,7 +1232,7 @@ async def handle_photo_or_album(message: types.Message, state: FSMContext):
                 lang = get_user_language(message.from_user.id)
                 await message.answer(PREVIEW_PHOTO_LIMIT_TEXT.get(lang, PREVIEW_PHOTO_LIMIT_TEXT["uk"]))
                 return
-            await analyze_and_reply(message, images, state)
+            await analyze_and_reply(message, images, state, listing_text=listing_text)
         return
 
     # --- Одиночне фото/документ ---
@@ -892,9 +1249,9 @@ async def handle_photo_or_album(message: types.Message, state: FSMContext):
     if not images:
         await message.answer("Будь ласка, надішліть скріншоти як фото або зображення-документи.")
         return
-    await analyze_and_reply(message, images, state)
+    await analyze_and_reply(message, images, state, listing_text=(message.caption or message.text or ""))
 
-async def analyze_and_reply(message, images, state):
+async def analyze_and_reply(message, images, state, listing_text: str = ""):
     lang = get_user_language(message.from_user.id)
     country = get_user_country(str(message.from_user.id)) or "Україна"
     print(
@@ -920,7 +1277,13 @@ async def analyze_and_reply(message, images, state):
     progress_task = asyncio.create_task(cycle_progress_messages(msg, steps, stop_event, interval_seconds=3.0))
 
     try:
-        site_datas = await analyze_ad_from_images(images, lang)
+        market_context = get_market_context(country)
+        site_datas = await analyze_ad_from_images(
+            images,
+            lang,
+            market_context=market_context if USE_NEW_PIPELINE else None,
+            processing_mode="preview",
+        )
         print(
             "DEBUG: analyze_ad_from_images result | "
             f"type={type(site_datas)} | count={len(site_datas) if isinstance(site_datas, list) else 'n/a'}"
@@ -943,6 +1306,15 @@ async def analyze_and_reply(message, images, state):
         # --- Зберігаємо перше авто у FSMContext ---
         if site_datas and len(site_datas) > 0:
             car_data = site_datas[0]
+            repost_text = (listing_text or message.caption or message.text or "").strip()
+            if repost_text:
+                text_data = await _extract_site_data_from_message_text(repost_text)
+                if isinstance(text_data, dict) and text_data:
+                    print(
+                        "DEBUG: analyze_and_reply merge text+photo | "
+                        f"text_keys={list(text_data.keys())} | photo_keys={list(car_data.keys()) if isinstance(car_data, dict) else 'n/a'}"
+                    )
+                    car_data = _merge_site_data(car_data if isinstance(car_data, dict) else {}, text_data)
             await state.update_data(current_car=car_data)
         else:
             stop_event.set()
@@ -964,7 +1336,22 @@ async def analyze_and_reply(message, images, state):
             await progress_task
             return
 
-        result_text = await gpt_full_analysis_4o(car_data, country, lang, summary_only=True)
+        if USE_NEW_PIPELINE:
+            try:
+                _soft_validate_before_gpt(car_data, raw_data=site_datas[0] if site_datas else None, stage="photo_preview_pipeline")
+                result_text = await run_analysis_pipeline(car_data, country, mode="preview", language=lang)
+            except Exception as pipeline_err:
+                print(f"WARN: new preview pipeline failed | mode=photo | err={pipeline_err}")
+                if PREVIEW_LEGACY_FALLBACK_ENABLED:
+                    print("WARN: preview legacy fallback enabled | mode=photo")
+                    _soft_validate_before_gpt(car_data, raw_data=site_datas[0] if site_datas else None, stage="photo_preview_legacy_fallback")
+                    result_text = await gpt_full_analysis_4o(car_data, country, lang, summary_only=True)
+                else:
+                    print("WARN: preview legacy fallback disabled | mode=photo")
+                    result_text = PREVIEW_TEMP_UNAVAILABLE_TEXT.get(lang, PREVIEW_TEMP_UNAVAILABLE_TEXT["uk"])
+        else:
+            _soft_validate_before_gpt(car_data, raw_data=site_datas[0] if site_datas else None, stage="photo_preview_legacy")
+            result_text = await gpt_full_analysis_4o(car_data, country, lang, summary_only=True)
         print(
             "DEBUG: gpt_full_analysis_4o returned(photo) | "
             f"type={type(result_text)} | len={len(result_text) if isinstance(result_text, str) else 0} | "

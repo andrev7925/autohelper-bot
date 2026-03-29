@@ -8,6 +8,7 @@ import re
 import numpy as np
 import time
 from datetime import datetime
+from collections import Counter
 from rapidfuzz import process, fuzz
 from transformers import AutoFeatureExtractor, AutoModelForImageClassification
 from transformers import CLIPProcessor, CLIPModel
@@ -15,6 +16,8 @@ import torch
 import openai
 import base64
 import json
+from ai_core.prompts.image_prompt import apply_market_context_to_image_prompt
+from ai_core.engines.image_engine import build_country_aware_image_prompt
 
 try:
     from paddleocr import PaddleOCR
@@ -283,6 +286,7 @@ JSON STRUCTURE
 "currency": "",
 "year": null,
 "mileage": null,
+"dashboard_mileage": null,
 "mileage_unit": "",
 "engine_type": "",
 "engine_volume": "",
@@ -427,6 +431,57 @@ def clean_plate_text(text: str) -> str:
     text = text.replace(" ", "").upper()
     text = text.replace("I", "1").replace("O", "0")
     return text
+
+
+PLATE_REGEX = r"^\d{2,3}-[A-Z]-\d{1,5}$"
+
+
+def normalize_plate(plate: str) -> str:
+    if not plate:
+        return ""
+    normalized = str(plate).upper().replace(" ", "").replace("_", "-")
+    normalized = normalized.replace("I", "1").replace("O", "0")
+    normalized = re.sub(r"-+", "-", normalized)
+
+    compact = re.sub(r"[^A-Z0-9]", "", normalized)
+    m = re.match(r"^(\d{2,3})([A-Z])(\d{1,5})$", compact)
+    if m:
+        return f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
+
+    return normalized
+
+
+def resolve_plate(plates: list[str]) -> tuple[str | None, float]:
+    valid_plates = [str(item).strip() for item in plates if str(item).strip()]
+    if not valid_plates:
+        return None, 0.0
+
+    counter = Counter(valid_plates)
+    plate, count = counter.most_common(1)[0]
+    confidence = count / len(valid_plates)
+    return plate, confidence
+
+
+def is_valid_irish_plate(plate: str) -> bool:
+    return bool(re.match(PLATE_REGEX, str(plate or "").strip()))
+
+
+def extract_year_from_plate(plate: str) -> int | None:
+    try:
+        year_part = str(plate or "").split("-")[0]
+
+        if len(year_part) == 2:
+            return 2000 + int(year_part)
+
+        if len(year_part) == 3:
+            return 2000 + int(year_part[:2])
+    except Exception:
+        return None
+    return None
+
+
+def should_show_year(year, year_source):
+    return str(year_source or "").strip().lower() in ["text", "dashboard"]
 
 def extract_plate_info(number_plate: str) -> dict:
     """
@@ -806,11 +861,17 @@ def decode_plate_eu_uk_with_gpt(number_plate: str) -> dict:
         print(f"WARN: decode_plate_eu_uk_with_gpt failed: {e}")
         return {}
 
-def gpt4v_extract_all(image: Image.Image, user_lang: str = 'uk') -> tuple[dict, str]:
+def gpt4v_extract_all(image: Image.Image, user_lang: str = 'uk', market_context: dict | None = None) -> tuple[dict, str]:
     """Витягує і структуровані дані, і весь текст в одному запиті. Підтримує мультимовні промпти."""
-    def _get_prompt(user_lang: str) -> str:
+    def _get_prompt(user_lang: str, image_obj: Image.Image) -> str:
         # Вибір промпта за мовою, дефолт — українська
-        return PROMPTS_GPT4V.get(user_lang, PROMPTS_GPT4V["uk"])
+        base_prompt = PROMPTS_GPT4V.get(user_lang, PROMPTS_GPT4V["uk"])
+        return build_country_aware_image_prompt(
+            base_prompt=base_prompt,
+            images=[image_obj],
+            country_code=None,
+            market_context=market_context,
+        )
 
     def _prepare_image_for_gpt_vision(
         src_image: Image.Image,
@@ -861,7 +922,7 @@ def gpt4v_extract_all(image: Image.Image, user_lang: str = 'uk') -> tuple[dict, 
     )
     img_b64 = base64.b64encode(img_bytes).decode()
 
-    prompt = _get_prompt(user_lang)
+    prompt = _get_prompt(user_lang, image)
 
     def _is_retryable_status(err: Exception) -> bool:
         status_code = getattr(err, "status_code", None)
@@ -938,9 +999,19 @@ def gpt4v_extract_all(image: Image.Image, user_lang: str = 'uk') -> tuple[dict, 
                 "brand_model": basic.get("title") or "",
                 "title": basic.get("title") or "",
                 "description": basic.get("full_description") or "",
+                "visual_make": parsed.get("visual_make") or basic.get("visual_make") or "",
+                "visual_model": parsed.get("visual_model") or basic.get("visual_model") or "",
+                "visual_confidence": parsed.get("visual_confidence") if parsed.get("visual_confidence") is not None else basic.get("visual_confidence"),
+                "trim_level": parsed.get("trim_level") or basic.get("trim_level") or "",
+                "features_detected": parsed.get("features_detected") if isinstance(parsed.get("features_detected"), list) else (basic.get("features_detected") if isinstance(basic.get("features_detected"), list) else []),
+                "interior_wear_level": parsed.get("interior_wear_level") or condition.get("interior_wear_level") or "",
+                "interior_confidence": parsed.get("interior_confidence") if parsed.get("interior_confidence") is not None else condition.get("interior_confidence"),
+                "interior_notes": parsed.get("interior_notes") if isinstance(parsed.get("interior_notes"), list) else (condition.get("interior_notes") if isinstance(condition.get("interior_notes"), list) else []),
+                "mileage_consistency": parsed.get("mileage_consistency") or condition.get("mileage_consistency") or "",
                 "year": basic.get("year") or "",
                 "price": basic.get("price") or "",
                 "currency": basic.get("currency") or "",
+                "dashboard_mileage": basic.get("dashboard_mileage") or parsed.get("dashboard_mileage") or None,
                 "color": basic.get("color") or "",
                 "engine": " ".join(
                     str(x).strip() for x in [basic.get("engine_type"), basic.get("engine_volume")] if x
@@ -986,6 +1057,54 @@ def gpt4v_extract_all(image: Image.Image, user_lang: str = 'uk') -> tuple[dict, 
                     structured_data["mileage_km"] = mileage_val
                     structured_data["mileage_unit"] = "km"
                     structured_data["mileage"] = mileage_val
+
+            try:
+                visual_conf = structured_data.get("visual_confidence")
+                if visual_conf in (None, ""):
+                    structured_data["visual_confidence"] = 0.0
+                else:
+                    structured_data["visual_confidence"] = float(visual_conf)
+            except Exception:
+                structured_data["visual_confidence"] = 0.0
+
+            try:
+                interior_conf = structured_data.get("interior_confidence")
+                if interior_conf in (None, ""):
+                    structured_data["interior_confidence"] = 0.0
+                else:
+                    structured_data["interior_confidence"] = float(interior_conf)
+            except Exception:
+                structured_data["interior_confidence"] = 0.0
+
+            trim_value = str(structured_data.get("trim_level") or "").strip().lower()
+            if trim_value not in {"basic", "medium", "high"}:
+                structured_data["trim_level"] = ""
+            else:
+                structured_data["trim_level"] = trim_value
+
+            interior_wear_value = str(structured_data.get("interior_wear_level") or "").strip().lower()
+            if interior_wear_value not in {"low", "medium", "high"}:
+                structured_data["interior_wear_level"] = ""
+            else:
+                structured_data["interior_wear_level"] = interior_wear_value
+
+            mileage_consistency_value = str(structured_data.get("mileage_consistency") or "").strip().lower()
+            if mileage_consistency_value not in {"consistent", "suspicious", "unknown"}:
+                structured_data["mileage_consistency"] = "unknown"
+            else:
+                structured_data["mileage_consistency"] = mileage_consistency_value
+
+            features_value = structured_data.get("features_detected")
+            if isinstance(features_value, list):
+                structured_data["features_detected"] = [str(item).strip() for item in features_value if str(item).strip()]
+            else:
+                structured_data["features_detected"] = []
+
+            interior_notes_value = structured_data.get("interior_notes")
+            if isinstance(interior_notes_value, list):
+                structured_data["interior_notes"] = [str(item).strip() for item in interior_notes_value if str(item).strip()]
+            else:
+                structured_data["interior_notes"] = []
 
             ocr_text = parsed.get("raw_text_extracted") or ""
             print("DEBUG: JSON parsed successfully")
@@ -1113,7 +1232,7 @@ Return ONLY valid JSON.
         print(f"WARN: gpt4v_extract_focus_fields failed: {e}")
         return {}
 
-def extract_text_from_images(image_bytes_list, user_lang='uk'):
+def extract_text_from_images(image_bytes_list, user_lang='uk', market_context: dict | None = None):
     images = [preprocess_image(Image.open(io.BytesIO(img_bytes))) for img_bytes in image_bytes_list]
     merged_img = merge_images_vertically(images)
     try:
@@ -1124,7 +1243,7 @@ def extract_text_from_images(image_bytes_list, user_lang='uk'):
             return text
     except Exception as e:
         print(f"DEBUG: OCR (Paddle) failed, fallback to GPT OCR: {e}")
-    _, text = gpt4v_extract_all(merged_img, user_lang=user_lang)
+    _, text = gpt4v_extract_all(merged_img, user_lang=user_lang, market_context=market_context)
     print("DEBUG: OCR (GPT-4V):", text)
     return text
 
@@ -1164,13 +1283,299 @@ def preprocess_image(img: Image.Image) -> Image.Image:
     return img
 
 
-async def analyze_ad_from_images(image_bytes_list, user_lang='uk'):
+def _prepare_image_b64_for_vision(src_image: Image.Image, max_width: int = 1200, quality: int = 80) -> str:
+    prepared = ImageOps.exif_transpose(src_image)
+    if prepared.mode != "RGB":
+        prepared = prepared.convert("RGB")
+    if prepared.width > max_width:
+        ratio = max_width / float(prepared.width)
+        prepared = prepared.resize((max_width, max(1, int(round(prepared.height * ratio)))), Image.LANCZOS)
+    buffer = io.BytesIO()
+    prepared.save(buffer, format="JPEG", quality=quality, optimize=True, progressive=True, subsampling=2)
+    return base64.b64encode(buffer.getvalue()).decode()
+
+
+PREVIEW_BATCH_PROMPT = """PREVIEW BATCH PROMPT
+You are a multi-image vehicle preview extractor.
+You receive ALL photos of one listing in one request.
+Return ONLY one valid JSON object with this exact schema:
+{
+    "plate_number": "",
+    "plate_year": null,
+    "registration_year": null,
+    "year": null,
+    "year_mismatch": false,
+    "import_suspected": false,
+    "vin": "",
+    "mileage": null,
+    "mileage_unit": "",
+    "inspection_valid_until": "",
+    "make": "",
+    "model": "",
+    "visual_confidence": 0.0
+}
+Rules:
+- Extract only explicitly visible data from images.
+- For mileage_unit use:
+    - "km" when the odometer or text clearly shows kilometres (km, км, kilometre, kilometrage, kilometraggio, километри, etc.).
+    - "miles" when the odometer or text clearly shows miles (mile, miles, mi, mil, mille, meilen, миль, мили, миля, тыс. миль, etc.).
+- Recognise words for kilometres and miles in these languages: Ukrainian, Russian, English, Spanish, Portuguese, Turkish, French, German.
+- If units are unclear, choose the unit that best matches what is written near the number (never guess from country alone).
+- Prioritize evidence in this order: plate -> NCT/registration docs -> other visible text.
+- Keep only one resolved value per field.
+- No explanations, no markdown, JSON only."""
+
+
+def _parse_json_from_gpt_response(text: str) -> dict:
+    payload = (text or "").strip()
+    if payload.startswith("```"):
+        payload = re.sub(r"^```[a-zA-Z]*\s*", "", payload)
+        payload = re.sub(r"\s*```$", "", payload)
+    parsed = json.loads(payload)
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _to_int_or_none(value) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        digits = re.sub(r"\D", "", str(value))
+        if not digits:
+            return None
+        return int(digits)
+    except Exception:
+        return None
+
+
+def _select_best_preview_fallback_image(images: list[Image.Image]) -> Image.Image | None:
+    if not images:
+        return None
+    best = None
+    best_score = float("-inf")
+    for img in images:
+        w, h = img.size
+        area_score = float(w * h)
+        aspect_bonus = 0.0
+        if h > 0 and 1.15 <= (w / float(h)) <= 2.3:
+            aspect_bonus = 0.15 * area_score
+        score = area_score + aspect_bonus
+        if score > best_score:
+            best = img
+            best_score = score
+    return best
+
+
+def gpt4v_extract_preview_batch(images: list[Image.Image], user_lang: str = "uk") -> dict:
+    if not images:
+        return {}
+    content = []
+    for img in images:
+        img_b64 = _prepare_image_b64_for_vision(img, max_width=1200, quality=78)
+        content.append({
+            "type": "image_url",
+            "image_url": {"url": "data:image/jpeg;base64," + img_b64},
+        })
+
+    response = openai.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {"role": "system", "content": PREVIEW_BATCH_PROMPT},
+            {"role": "user", "content": content},
+        ],
+        max_tokens=900,
+        temperature=0.0,
+        top_p=1.0,
+    )
+    text = (response.choices[0].message.content or "").strip()
+    return _parse_json_from_gpt_response(text)
+
+
+def _extract_registration_year_from_date_text(value: str) -> int | None:
+    if not value:
+        return None
+    text = str(value)
+    years = re.findall(r"\b(19\d{2}|20\d{2})\b", text)
+    if years:
+        year = int(years[-1])
+        if 1980 <= year <= 2035:
+            return year
+
+    m = re.search(r"\b(\d{1,2})[\./\-](\d{1,2})[\./\-](\d{2})\b", text)
+    if m:
+        yy = int(m.group(3))
+        return 2000 + yy
+    return None
+
+
+async def _analyze_ad_from_images_preview(image_bytes_list, user_lang='uk', market_context: dict | None = None):
+    images = [Image.open(io.BytesIO(img_bytes)) for img_bytes in image_bytes_list][:12]
+    if not images:
+        return []
+
+    print("DEBUG: BATCH_MODE_ENABLED")
+    print(f"DEBUG: IMAGES_COUNT = {len(images)}")
+
+    preview_call_counters = {
+        "batch_extract": 0,
+        "single_fallback": 0,
+    }
+    preview_cost_per_call = {
+        "batch_extract": 0.0035,
+        "single_fallback": 0.0035,
+    }
+
+    raw_data = {}
+    try:
+        preview_call_counters["batch_extract"] += 1
+        raw_data = await asyncio.to_thread(gpt4v_extract_preview_batch, images, user_lang)
+        if not isinstance(raw_data, dict) or not raw_data:
+            raise ValueError("empty batch result")
+        print("DEBUG: BATCH_RESPONSE_SUCCESS")
+    except Exception as batch_err:
+        print(f"WARN: Preview batch failed: {batch_err}")
+        best_image = _select_best_preview_fallback_image(images)
+        if best_image is None:
+            return []
+        preview_call_counters["single_fallback"] += 1
+        raw_data = await asyncio.to_thread(gpt4v_extract_preview_batch, [best_image], user_lang)
+        print("DEBUG: BATCH_RESPONSE_SUCCESS")
+
+    plate_raw = str(raw_data.get("plate_number") or raw_data.get("license_plate") or "").strip()
+    normalized_plate = normalize_plate(plate_raw)
+    final_plate = normalized_plate if normalized_plate and is_valid_irish_plate(normalized_plate) else None
+
+    plate_year_value = _to_int_or_none(raw_data.get("plate_year"))
+    registration_year = _to_int_or_none(raw_data.get("registration_year"))
+    year = _to_int_or_none(raw_data.get("year"))
+    mileage = _to_int_or_none(raw_data.get("mileage"))
+    if mileage is not None and mileage <= 0:
+        mileage = None
+
+    derived_plate_year = extract_year_from_plate(final_plate) if final_plate else None
+    plate_year = plate_year_value or derived_plate_year
+
+    if plate_year is not None:
+        year = plate_year
+        year_source = "plate_inferred"
+    elif registration_year is not None:
+        year = registration_year
+        year_source = "text"
+    elif year is not None:
+        year_source = "text"
+    else:
+        year_source = "unknown"
+
+    year_mismatch_raw = raw_data.get("year_mismatch")
+    import_suspected_raw = raw_data.get("import_suspected")
+    # Більш консервативний підхід: вважаємо імпортом лише тоді,
+    # коли рік першої реєстрації суттєво пізніший за рік номера.
+    computed_year_mismatch = bool(plate_year and registration_year and (registration_year - plate_year >= 2))
+    year_mismatch = bool(year_mismatch_raw) if year_mismatch_raw is not None else computed_year_mismatch
+    import_suspected = bool(import_suspected_raw) if import_suspected_raw is not None else year_mismatch
+
+    inspection_valid_until = str(raw_data.get("inspection_valid_until") or raw_data.get("nct_valid_until") or "").strip()
+    vin = str(raw_data.get("vin") or "").strip()
+    make = str(raw_data.get("make") or raw_data.get("visual_make") or "").strip()
+    model = str(raw_data.get("model") or raw_data.get("visual_model") or "").strip()
+    mileage_unit_raw = str(raw_data.get("mileage_unit") or "").strip().lower()
+    if mileage_unit_raw in {"mile", "miles", "mi", "миля", "мили", "миль", "милях"}:
+        mileage_unit = "miles"
+    elif mileage_unit_raw in {"km", "км", "kilometer", "kilometers", "kilometre", "kilomètre", "kilomètres"}:
+        mileage_unit = "km"
+    else:
+        # Невідомі або відсутні одиниці — залишаємо порожні,
+        # щоб нормалізатор сам спробував визначити їх за текстом.
+        mileage_unit = "" if mileage is not None else ""
+    try:
+        visual_confidence = float(raw_data.get("visual_confidence") or 0.0)
+    except Exception:
+        visual_confidence = 0.0
+    visual_confidence = max(0.0, min(1.0, visual_confidence))
+
+    result = {
+        "make": make,
+        "model": model,
+        "visual_make": make,
+        "visual_model": model,
+        "visual_confidence": visual_confidence,
+        "make_model_source": "vision_batch",
+        "plate_number": final_plate,
+        "license_plate": final_plate or "",
+        "plate_confidence": 1.0 if final_plate else 0.0,
+        "plate_year": plate_year,
+        "registration_year": registration_year,
+        "year_mismatch": year_mismatch,
+        "import_suspected": import_suspected,
+        "year": year,
+        "year_source": year_source,
+        "inspection_valid_until": inspection_valid_until,
+        "registration_date": "",
+        "vin": vin,
+        "mileage": mileage,
+        "mileage_km": mileage if mileage is not None and mileage_unit != "miles" else None,
+        "mileage_miles": mileage if mileage is not None and mileage_unit == "miles" else None,
+        "mileage_unit": mileage_unit,
+        "country": str((market_context or {}).get("country") or "").strip(),
+        "source": "preview_batch",
+    }
+
+    preview_total_calls = sum(preview_call_counters.values())
+    preview_estimated_cost_usd = round(
+        sum(preview_call_counters[name] * preview_cost_per_call[name] for name in preview_call_counters),
+        4,
+    )
+    print(f"DEBUG: PREVIEW_MODE_CALLS = {preview_call_counters}")
+    print(f"DEBUG: PREVIEW_MODE_TOTAL_CALLS = {preview_total_calls}")
+    print(f"DEBUG: PREVIEW_MODE_ESTIMATED_COST_USD = {preview_estimated_cost_usd}")
+    print("FINAL BEFORE GPT:", result)
+    print(f"DEBUG: ✅ Фінальні зібрані дані: {result}")
+    return [result]
+
+
+async def analyze_ad_from_images(
+    image_bytes_list,
+    user_lang='uk',
+    market_context: dict | None = None,
+    processing_mode: str = "preview",
+    preview_seed: dict | None = None,
+):
     """УЛЬТРА-ШВИДКИЙ аналіз = як ChatGPT Vision! 5-8 секунд."""
+    mode = (processing_mode or "preview").strip().lower()
+    if mode == "preview":
+        return await _analyze_ad_from_images_preview(image_bytes_list, user_lang=user_lang, market_context=market_context)
+
     print("DEBUG: 🚀 ULTRA-FAST режим (ChatGPT-style)")
     images = [Image.open(io.BytesIO(img_bytes)) for img_bytes in image_bytes_list]
     merged_data = {}
     merged_scores = {}
     merged_text_parts = []
+    plates_raw = []
+    CRITICAL_FIELDS = {"year", "price", "mileage", "mileage_unit"}
+    VISUAL_KEYS = {"visual_make", "visual_model", "visual_confidence"}
+    preview_seed_data = preview_seed if isinstance(preview_seed, dict) else {}
+    full_call_counters = {
+        "extract_all": 0,
+        "focus_extract": 0,
+        "make_model_detect": 0,
+        "plate_decode": 0,
+    }
+    full_cost_per_call = {
+        "extract_all": 0.0100,
+        "focus_extract": 0.0050,
+        "make_model_detect": 0.0100,
+        "plate_decode": 0.0005,
+    }
+    preview_seed_plate = normalize_plate(preview_seed_data.get("plate_number") or preview_seed_data.get("license_plate") or "")
+    try:
+        preview_seed_plate_conf = float(preview_seed_data.get("plate_confidence") or 0.0)
+    except Exception:
+        preview_seed_plate_conf = 0.0
+
+    if preview_seed_plate and preview_seed_plate_conf > 0.9:
+        merged_data["license_plate"] = preview_seed_plate
+        merged_data["plate_number"] = preview_seed_plate
+        merged_data["plate_confidence"] = preview_seed_plate_conf
+        print("DEBUG: FULL_MODE_REUSE_PREVIEW_PLATE = True")
 
     def _is_empty(value) -> bool:
         if value is None:
@@ -1180,6 +1585,11 @@ async def analyze_ad_from_images(image_bytes_list, user_lang='uk'):
         if isinstance(value, list) and not value:
             return True
         return False
+
+    def safe_merge(old, new):
+        if new is None or new == "" or new == 0:
+            return old
+        return new
 
     def _value_score(key: str, value) -> float:
         if _is_empty(value):
@@ -1245,8 +1655,22 @@ async def analyze_ad_from_images(image_bytes_list, user_lang='uk'):
         if key == "text" or _is_empty(value):
             return
 
-        candidate_score = _value_score(key, value) + source_quality
         current_value = merged_data.get(key)
+
+        # Lock critical fields after first valid detection to avoid corruption in later passes.
+        if key in CRITICAL_FIELDS and not _is_empty(current_value):
+            return
+
+        if key in CRITICAL_FIELDS:
+            merged_data[key] = safe_merge(current_value, value)
+            if not _is_empty(merged_data.get(key)):
+                merged_scores[key] = max(
+                    merged_scores.get(key, -1000.0),
+                    _value_score(key, merged_data.get(key)) + source_quality,
+                )
+            return
+
+        candidate_score = _value_score(key, value) + source_quality
         current_score = merged_scores.get(key, _value_score(key, current_value))
 
         if _is_empty(current_value):
@@ -1265,25 +1689,104 @@ async def analyze_ad_from_images(image_bytes_list, user_lang='uk'):
 
     def _merge_fields(incoming: dict, source_quality: float = 0.0):
         for key, value in incoming.items():
+            if key in VISUAL_KEYS:
+                continue
             _set_if_better(key, value, source_quality=source_quality)
 
     def _extract_mileage_from_text(raw_text: str):
+        """Extract mileage and its unit from arbitrary OCR text.
+
+        Returns a tuple (km_value, miles_value), only one of which is non-None.
+        Supports multiple languages and formats such as:
+        - "170,059 km", "170 059 км"
+        - "171k miles", "171 тыс. миль".
+        """
         if not raw_text:
             return None, None
-        txt = str(raw_text)
-        miles_match = re.search(r"(\d{1,3}(?:[\s,\.]\d{3})+|\d{4,6})\s*(miles|mile|mi)\b", txt, re.IGNORECASE)
-        if miles_match:
-            miles_raw = re.sub(r"\D", "", miles_match.group(1))
-            if miles_raw:
-                miles_val = int(miles_raw)
+
+        txt = str(raw_text).lower()
+
+        # Miles patterns (EN + multi-language variants)
+        miles_patterns = [
+            r"(\d{1,3}(?:[\s,\.\u202f]\d{3})+)\s*(miles?|mi|mile|mil)\b",
+            r"(\d{2,3})\s*(k|к|тис|тыс)\.?\s*(miles?|mi|mile|мил\w*)",
+            r"(\d{4,6})\s*(miles?|mi|mile|мил\w*)",
+            r"(\d{1,3}(?:[\s,\.\u202f]\d{3})+)\s*мил\w*",
+        ]
+
+        for pattern in miles_patterns:
+            m = re.search(pattern, txt, re.IGNORECASE)
+            if not m:
+                continue
+            raw_num = m.group(1)
+            factor = 1000 if ("k" in m.group(0) or "к" in m.group(0) or "тис" in m.group(0) or "тыс" in m.group(0)) else 1
+            digits = re.sub(r"\D", "", raw_num or "")
+            if not digits:
+                continue
+            try:
+                miles_val = int(digits) * factor
+            except Exception:
+                continue
+            if 1000 <= miles_val <= 900000:
                 return None, miles_val
 
-        km_match = re.search(r"(\d{1,3}(?:[\s,\.]\d{3})+|\d{4,6})\s*(km|км)\b", txt, re.IGNORECASE)
-        if km_match:
-            km_raw = re.sub(r"\D", "", km_match.group(1))
-            if km_raw:
-                return int(km_raw), None
+        # Kilometre patterns (EN + multi-language variants)
+        km_patterns = [
+            r"(\d{1,3}(?:[\s,\.\u202f]\d{3})+)\s*(km|км)\b",
+            r"(\d{2,3})\s*(k|к|тис|тыс)\.?\s*(km|км|kilom|kilomètre|kilometre|kilometer|kilómetros?|kilometros?|kilometraje|kilométrage|laufleistung)",
+            r"(\d{4,6})\s*(km|км)\b",
+        ]
+
+        for pattern in km_patterns:
+            m = re.search(pattern, txt, re.IGNORECASE)
+            if not m:
+                continue
+            raw_num = m.group(1)
+            factor = 1000 if ("k" in m.group(0) or "к" in m.group(0) or "тис" in m.group(0) or "тыс" in m.group(0)) else 1
+            digits = re.sub(r"\D", "", raw_num or "")
+            if not digits:
+                continue
+            try:
+                km_val = int(digits) * factor
+            except Exception:
+                continue
+            if 1000 <= km_val <= 900000:
+                return km_val, None
+
         return None, None
+
+    def _extract_dashboard_mileage_from_text(raw_text: str):
+        if not raw_text:
+            return None
+        txt = str(raw_text)
+
+        patterns = [
+            r"(?:odometer|dashboard|instrument cluster|dash)\s*[:\-]?\s*(\d{1,3}(?:[\s,\.]\d{3})+|\d{4,6}|\d{2,3}\s*[kк])\s*(km|км|miles?|mi)?",
+            r"(?:пробіг на панелі|одометр|приборка)\s*[:\-]?\s*(\d{1,3}(?:[\s,\.]\d{3})+|\d{4,6}|\d{2,3}\s*[kк])\s*(км|km|miles?|mi)?",
+        ]
+
+        for pattern in patterns:
+            m = re.search(pattern, txt, re.IGNORECASE)
+            if not m:
+                continue
+            raw_val = (m.group(1) or "").lower().replace(" ", "")
+            multiplier = 1000 if re.search(r"[kк]", raw_val) else 1
+            digits = re.sub(r"\D", "", raw_val)
+            if not digits:
+                continue
+            try:
+                mileage_val = int(digits) * multiplier
+            except Exception:
+                continue
+
+            unit = (m.group(2) or "").lower()
+            if unit in {"mile", "miles", "mi"}:
+                mileage_val = int(mileage_val * 1.60934)
+
+            if 1000 <= mileage_val <= 900000:
+                return mileage_val
+
+        return None
 
     def _extract_year_from_text(raw_text: str):
         if not raw_text:
@@ -1294,8 +1797,12 @@ async def analyze_ad_from_images(image_bytes_list, user_lang='uk'):
         current_year = datetime.now().year
 
         year_hint_keywords = [
-            "year", "рік", "год", "model", "model year", "first reg", "registered", "registration",
-            "año", "ano", "yıl", "ann", "immat", "matric", "baujahr",
+            "year", "рік", "год", "model", "model year",
+            "año", "ano", "yıl", "ann", "baujahr",
+        ]
+        registration_keywords = [
+            "first reg", "registered", "registration", "date of first registration", "first registration",
+            "дата першої реєстрації", "дата первой регистрации", "immat", "matric",
         ]
         inspection_keywords = [
             "nct", "mot", "itv", "tuv", "tüv", "inspection", "inspe", "tehog", "техог", "то",
@@ -1317,6 +1824,8 @@ async def analyze_ad_from_images(image_bytes_list, user_lang='uk'):
             score = 0
             if any(keyword in context for keyword in year_hint_keywords):
                 score += 60
+            if any(keyword in context for keyword in registration_keywords):
+                score -= 60
             if any(keyword in context for keyword in inspection_keywords):
                 score -= 90
             if year_val > current_year + 1:
@@ -1330,6 +1839,33 @@ async def analyze_ad_from_images(image_bytes_list, user_lang='uk'):
 
         if best_year is not None and best_score > -90:
             return best_year
+        return None
+
+    def _extract_registration_year_from_text(raw_text: str):
+        if not raw_text:
+            return None
+
+        txt = str(raw_text)
+        txt_l = txt.lower()
+
+        patterns = [
+            r"date\s+of\s+first\s+registration\s*[:\-]?\s*(?:\d{1,2}[\./\-]\d{1,2}[\./\-])?(19\d{2}|20\d{2})",
+            r"first\s+registration\s*[:\-]?\s*(?:\d{1,2}[\./\-]\d{1,2}[\./\-])?(19\d{2}|20\d{2})",
+            r"first\s+reg\s*[:\-]?\s*(?:\d{1,2}[\./\-]\d{1,2}[\./\-])?(19\d{2}|20\d{2})",
+            r"дата\s+першої\s+реєстрації\s*[:\-]?\s*(?:\d{1,2}[\./\-]\d{1,2}[\./\-])?(19\d{2}|20\d{2})",
+        ]
+
+        for pattern in patterns:
+            m = re.search(pattern, txt_l, re.IGNORECASE)
+            if not m:
+                continue
+            try:
+                year_val = int(m.group(1))
+            except Exception:
+                continue
+            if 1980 <= year_val <= 2035:
+                return year_val
+
         return None
 
     def _extract_price_currency_from_text(raw_text: str):
@@ -1500,6 +2036,65 @@ async def analyze_ad_from_images(image_bytes_list, user_lang='uk'):
         except Exception:
             return None
 
+    def select_best_vehicle_image(images, image_hints=None):
+        if not images:
+            return None, -1, []
+
+        hints = image_hints if isinstance(image_hints, list) else []
+        ranked = []
+
+        for idx, _img in enumerate(images):
+            hint = hints[idx] if idx < len(hints) and isinstance(hints[idx], dict) else {}
+            score = 0
+
+            has_exterior = bool(hint.get("visual_make") or hint.get("visual_model"))
+            has_plate = bool(hint.get("license_plate"))
+            has_interior = bool(
+                hint.get("interior_condition")
+                or hint.get("interior_wear_level")
+                or hint.get("steering_wheel_wear")
+                or hint.get("seat_wear")
+                or hint.get("pedal_wear")
+            )
+            has_document = bool(
+                hint.get("registration_documents_visible")
+                or hint.get("insurance_documents_visible")
+                or hint.get("vin")
+                or hint.get("inspection_stickers")
+            )
+
+            if has_exterior:
+                score += 3
+            if has_plate:
+                score += 2
+            if has_interior and not has_exterior:
+                score -= 2
+            if has_document:
+                score -= 3
+
+            ranked.append((score, idx))
+
+        ranked.sort(key=lambda item: item[0], reverse=True)
+        best_idx = ranked[0][1] if ranked else 0
+        best_img = images[best_idx]
+        ranked_indices = [idx for _, idx in ranked]
+        return best_img, best_idx, ranked_indices
+
+    def gpt_detect_make_model(image: Image.Image):
+        data, _ = gpt4v_extract_all(image, user_lang=user_lang, market_context=market_context)
+        data = data if isinstance(data, dict) else {}
+        make = str(data.get("visual_make") or "").strip()
+        model = str(data.get("visual_model") or "").strip()
+        try:
+            conf = float(data.get("visual_confidence") or 0.0)
+        except Exception:
+            conf = 0.0
+        if conf < 0.0:
+            conf = 0.0
+        if conf > 1.0:
+            conf = 1.0
+        return {"make": make, "model": model, "confidence": conf}
+
     async def _analyze_single_photo(i: int, img: Image.Image):
         # Тримаємо вищу деталізацію: дрібні поля (колір/КПП/стікери) часто губляться на 1024.
         target_w = min(1600, img.width)
@@ -1510,10 +2105,12 @@ async def analyze_ad_from_images(image_bytes_list, user_lang='uk'):
         else:
             small_img = img
         print(f"DEBUG: Аналізуємо фото {i+1} через GPT-4V...")
-        data, extracted_text = await asyncio.to_thread(gpt4v_extract_all, small_img, user_lang)
+        full_call_counters["extract_all"] += 1
+        data, extracted_text = await asyncio.to_thread(gpt4v_extract_all, small_img, user_lang, market_context)
         return i, data, extracted_text
 
     photos_to_process = images[:12]  # Максимум 12 фото
+    image_hints = [{} for _ in photos_to_process]
     tasks = [_analyze_single_photo(i, img) for i, img in enumerate(photos_to_process)]
     results = await asyncio.gather(*tasks)
 
@@ -1527,11 +2124,20 @@ async def analyze_ad_from_images(image_bytes_list, user_lang='uk'):
             merged_text_parts.append(str(extracted_text))
 
         if data:
+            image_hints[i] = data if isinstance(data, dict) else {}
             filled_fields = sum(1 for k, v in data.items() if k != "text" and not _is_empty(v))
             source_quality = float(min(filled_fields, 15))
             if extracted_text:
                 source_quality += min(len(str(extracted_text)) / 300.0, 8.0)
             _merge_fields(data, source_quality=source_quality)
+
+            plate_candidate = normalize_plate(data.get("license_plate") or "")
+            if plate_candidate:
+                plates_raw.append(plate_candidate)
+
+        text_plate_candidate = normalize_plate(_extract_plate_from_text(extracted_text or ""))
+        if text_plate_candidate:
+            plates_raw.append(text_plate_candidate)
 
         # Fallback: якщо пробіг не витягнуто структуровано, дістаємо з OCR тексту
         if not merged_data.get("mileage_km") and not merged_data.get("mileage_miles"):
@@ -1550,22 +2156,31 @@ async def analyze_ad_from_images(image_bytes_list, user_lang='uk'):
         if not has_core:
             print(f"DEBUG: ❌ Фото {i+1} - недостатньо базових даних")
 
-    # Додатковий aggregate-прохід по склеєному полотну всіх фото: краще для контекстних полів.
-    try:
-        merged_img = merge_images_vertically(photos_to_process)
-        print("DEBUG: Aggregate pass через GPT-4V по merged image...")
-        agg_data, agg_text = await asyncio.to_thread(gpt4v_extract_all, merged_img, user_lang)
-        if agg_text:
-            merged_text_parts.append(str(agg_text))
-        if isinstance(agg_data, dict) and agg_data:
-            agg_filled_fields = sum(1 for k, v in agg_data.items() if k != "text" and not _is_empty(v))
-            agg_quality = float(min(agg_filled_fields, 18)) + 6.0
-            _merge_fields(agg_data, source_quality=agg_quality)
-            print(f"DEBUG: Aggregate pass merged fields={agg_filled_fields}")
-    except Exception as agg_err:
-        print(f"WARN: Aggregate pass failed: {agg_err}")
+    # Додатковий aggregate-прохід по склеєному полотну всіх фото: тільки якщо справді потрібно.
+    need_aggregate = any(
+        not merged_data.get(key)
+        for key in ["license_plate", "year", "mileage_km", "mileage_miles", "vin", "price"]
+    )
+    if need_aggregate:
+        try:
+            merged_img = merge_images_vertically(photos_to_process)
+            print("DEBUG: Aggregate pass через GPT-4V по merged image...")
+            full_call_counters["extract_all"] += 1
+            agg_data, agg_text = await asyncio.to_thread(gpt4v_extract_all, merged_img, user_lang, market_context)
+            if agg_text:
+                merged_text_parts.append(str(agg_text))
+            if isinstance(agg_data, dict) and agg_data:
+                agg_filled_fields = sum(1 for k, v in agg_data.items() if k != "text" and not _is_empty(v))
+                agg_quality = float(min(agg_filled_fields, 18)) + 6.0
+                _merge_fields(agg_data, source_quality=agg_quality)
+                print(f"DEBUG: Aggregate pass merged fields={agg_filled_fields}")
+        except Exception as agg_err:
+            print(f"WARN: Aggregate pass failed: {agg_err}")
+    else:
+        print("DEBUG: Aggregate pass skipped (enough data)")
 
     # Focused pass for frequently missed fields: year/gearbox/interior/tire/pedals/color.
+    # TEMP: strictly fill empty fields only, no overrides.
     need_focus = any(
         not merged_data.get(key)
         for key in ["year", "gearbox", "interior_condition", "tire_condition", "pedal_wear", "color"]
@@ -1574,6 +2189,7 @@ async def analyze_ad_from_images(image_bytes_list, user_lang='uk'):
         try:
             focus_img = merge_images_vertically(photos_to_process)
             print("DEBUG: Focused pass через GPT-4V для year/gearbox/interior/tire/pedals/color...")
+            full_call_counters["focus_extract"] += 1
             focus_data = await asyncio.to_thread(gpt4v_extract_focus_fields, focus_img, user_lang)
             if isinstance(focus_data, dict) and focus_data:
                 if focus_data.get("year") and not merged_data.get("year"):
@@ -1592,23 +2208,72 @@ async def analyze_ad_from_images(image_bytes_list, user_lang='uk'):
             print(f"WARN: Focused pass failed: {focus_err}")
 
     if merged_data:
+        best_image, best_index, ranked_indices = select_best_vehicle_image(photos_to_process, image_hints=image_hints)
+        print(f"DEBUG: BEST_IMAGE_INDEX = {best_index}")
+
+        make_model_result = {"make": "", "model": "", "confidence": 0.0}
+        if best_image is not None:
+            try:
+                full_call_counters["make_model_detect"] += 1
+                make_model_result = await asyncio.to_thread(gpt_detect_make_model, best_image)
+            except Exception as mm_err:
+                print(f"WARN: gpt_detect_make_model failed on best image: {mm_err}")
+
+            if make_model_result.get("confidence", 0.0) < 0.7 and len(ranked_indices) > 1:
+                second_index = ranked_indices[1]
+                try:
+                    full_call_counters["make_model_detect"] += 1
+                    fallback_result = await asyncio.to_thread(gpt_detect_make_model, photos_to_process[second_index])
+                    if (fallback_result.get("confidence") or 0.0) > (make_model_result.get("confidence") or 0.0):
+                        make_model_result = fallback_result
+                        best_index = second_index
+                except Exception as mm_err:
+                    print(f"WARN: gpt_detect_make_model failed on second best image: {mm_err}")
+
+        hint_for_best = image_hints[best_index] if 0 <= best_index < len(image_hints) and isinstance(image_hints[best_index], dict) else {}
+        visual_make = str(make_model_result.get("make") or hint_for_best.get("visual_make") or "").strip()
+        visual_model = str(make_model_result.get("model") or hint_for_best.get("visual_model") or "").strip()
+        try:
+            visual_conf = float(make_model_result.get("confidence") or hint_for_best.get("visual_confidence") or 0.0)
+        except Exception:
+            visual_conf = 0.0
+
+        if visual_make:
+            merged_data["visual_make"] = visual_make
+        if visual_model:
+            merged_data["visual_model"] = visual_model
+        merged_data["visual_confidence"] = visual_conf
+        merged_data["make_model_source"] = "vision_single_image"
+
+        print("DEBUG: MAKE_MODEL_SOURCE = vision_single_image")
+        print(f"DEBUG: MAKE_MODEL_CONFIDENCE = {visual_conf}")
+
+        selected_market_country = ""
+        if isinstance(market_context, dict):
+            selected_market_country = str(market_context.get("country") or "").strip()
+
         full_ocr_text = "\n".join(merged_text_parts) if merged_text_parts else ""
         if full_ocr_text and not merged_data.get("text"):
             merged_data["text"] = full_ocr_text
 
-        # Direct plate OCR fallback from photos (helps when LLM JSON misses license plate).
-        if not merged_data.get("license_plate"):
+        # Collect plate candidates from ALL images via OCR fallback.
+        if not (preview_seed_plate and preview_seed_plate_conf > 0.9):
             for img in photos_to_process:
                 try:
                     plate_guess = await asyncio.to_thread(extract_plate_paddle, img)
-                    if plate_guess:
-                        _set_if_better("license_plate", plate_guess, source_quality=42.0)
-                        break
+                    normalized_guess = normalize_plate(plate_guess or "")
+                    if normalized_guess:
+                        plates_raw.append(normalized_guess)
                 except Exception as plate_err:
                     print(f"WARN: plate OCR fallback failed: {plate_err}")
 
         # Global fallback enrichment from merged OCR text (for dozens of fields when JSON is partial).
         if full_ocr_text:
+            if not merged_data.get("dashboard_mileage"):
+                dashboard_mileage_val = _extract_dashboard_mileage_from_text(full_ocr_text)
+                if dashboard_mileage_val:
+                    _set_if_better("dashboard_mileage", dashboard_mileage_val, source_quality=26.0)
+
             if not merged_data.get("year"):
                 year_val = _extract_year_from_text(full_ocr_text)
                 if year_val:
@@ -1618,6 +2283,10 @@ async def analyze_ad_from_images(image_bytes_list, user_lang='uk'):
                 plate_val = _extract_plate_from_text(full_ocr_text)
                 if plate_val:
                     _set_if_better("license_plate", plate_val, source_quality=35.0)
+
+            full_text_plate = normalize_plate(_extract_plate_from_text(full_ocr_text))
+            if full_text_plate:
+                plates_raw.append(full_text_plate)
 
             if not merged_data.get("vin"):
                 vin_val = _extract_vin_from_text(full_ocr_text)
@@ -1663,42 +2332,122 @@ async def analyze_ad_from_images(image_bytes_list, user_lang='uk'):
                 if color_val:
                     _set_if_better("color", color_val, source_quality=14.0)
 
-        # Derive country/year from plate when explicit plate exists (no guessing from model).
-        plate_for_info = merged_data.get("license_plate") or ""
+        direct_plate_candidate = normalize_plate(merged_data.get("license_plate") or "")
+        if direct_plate_candidate:
+            plates_raw.append(direct_plate_candidate)
+
+        print(f"DEBUG: PLATES_RAW = {plates_raw}")
+
+        plate, plate_conf = resolve_plate(plates_raw)
+        if plate and is_valid_irish_plate(plate):
+            final_plate = plate
+            plate_confidence = round(float(plate_conf), 3)
+        else:
+            final_plate = None
+            plate_confidence = 0.0
+
+        merged_data["plate_number"] = final_plate
+        merged_data["plate_confidence"] = plate_confidence
+        merged_data["license_plate"] = final_plate or ""
+
+        print(f"DEBUG: PLATE_FINAL = {final_plate}")
+        print(f"DEBUG: PLATE_CONFIDENCE = {plate_confidence}")
+
+        model_year = _safe_int(merged_data.get("year"))
+        year_from_dashboard = _safe_int(merged_data.get("dashboard_year"))
+        plate_year = extract_year_from_plate(final_plate) if final_plate else None
+        registration_year = _extract_registration_year_from_text(full_ocr_text)
+
+        year_mismatch = False
+        import_suspected = False
+        # Аналогічно preview-режиму: вважаємо імпорт тільки при
+        # різниці у два і більше роки між роком по номеру та першою реєстрацією.
+        if plate_year and registration_year:
+            if registration_year - plate_year >= 2:
+                year_mismatch = True
+                import_suspected = True
+
+        is_ireland_plate = bool(final_plate and is_valid_irish_plate(final_plate))
+
+        if is_ireland_plate and plate_year is not None:
+            resolved_year = plate_year
+            year_source = "plate_inferred"
+        elif model_year is not None:
+            resolved_year = model_year
+            year_source = "text"
+        elif registration_year is not None:
+            resolved_year = registration_year
+            year_source = "text"
+        elif year_from_dashboard is not None:
+            resolved_year = year_from_dashboard
+            year_source = "dashboard"
+        else:
+            resolved_year = None
+            year_source = "unknown"
+
+        merged_data["year"] = resolved_year
+        merged_data["year_source"] = year_source
+        merged_data["plate_year"] = plate_year
+        merged_data["registration_year"] = registration_year
+        merged_data["year_mismatch"] = year_mismatch
+        merged_data["import_suspected"] = import_suspected
+
+        print(f"DEBUG: YEAR_SOURCE = {year_source}")
+        print(f"DEBUG: YEAR = {resolved_year}")
+        print(f"DEBUG: PLATE_YEAR = {plate_year}")
+        print(f"DEBUG: REGISTRATION_YEAR = {registration_year}")
+        print(f"DEBUG: YEAR_MISMATCH = {year_mismatch}")
+        print(f"DEBUG: IMPORT_SUSPECTED = {import_suspected}")
+
+        # Derive country/region from resolved final plate only.
+        plate_for_info = final_plate or ""
         if plate_for_info:
             plate_info = extract_plate_info(str(plate_for_info)) or {}
+            full_call_counters["plate_decode"] += 1
             gpt_plate_info = decode_plate_eu_uk_with_gpt(str(plate_for_info)) or {}
-
-            plate_year = plate_info.get("year")
-            if not isinstance(plate_year, int):
-                gpt_year = gpt_plate_info.get("year")
-                if isinstance(gpt_year, int):
-                    plate_year = gpt_year
 
             plate_country = plate_info.get("country") or gpt_plate_info.get("country")
             plate_region = plate_info.get("region") or gpt_plate_info.get("region")
 
-            current_year = _safe_int(merged_data.get("year"))
-            if isinstance(plate_year, int) and 1980 <= plate_year <= 2035:
-                if current_year is None or abs(current_year - plate_year) >= 1:
-                    _set_if_better("year", plate_year, source_quality=60.0)
-            if not merged_data.get("country") and isinstance(plate_country, str) and plate_country.strip():
-                _set_if_better("country", plate_country.strip(), source_quality=20.0)
+            if isinstance(plate_country, str) and plate_country.strip():
+                normalized_plate_country = plate_country.strip()
+                if selected_market_country:
+                    if not merged_data.get("plate_country_guess"):
+                        _set_if_better("plate_country_guess", normalized_plate_country, source_quality=8.0)
+
+                    existing_country = str(merged_data.get("country") or "").strip()
+                    if not existing_country:
+                        _set_if_better("country", selected_market_country, source_quality=55.0)
+                    elif existing_country.lower() != selected_market_country.lower():
+                        merged_data["country"] = selected_market_country
+                else:
+                    if not merged_data.get("country"):
+                        _set_if_better("country", normalized_plate_country, source_quality=20.0)
             if isinstance(plate_region, str) and plate_region.strip() and not merged_data.get("plate_region"):
                 _set_if_better("plate_region", plate_region.strip(), source_quality=10.0)
 
+        # Respect user-selected market when provided (feature-flagged path).
+        if selected_market_country:
+            existing_country = str(merged_data.get("country") or "").strip()
+            if not existing_country or existing_country.lower() != selected_market_country.lower():
+                merged_data["country"] = selected_market_country
+
         # Final anti-hallucination normalization for numeric core fields.
+        # Keep existing detected critical values instead of deleting them.
+        preserved_year = merged_data.get("year")
+        preserved_price = merged_data.get("price")
+
         normalized_year = _safe_int(merged_data.get("year"))
-        if normalized_year is None or not (1980 <= normalized_year <= 2035):
-            merged_data.pop("year", None)
-        else:
+        if normalized_year is not None and (1980 <= normalized_year <= 2035):
             merged_data["year"] = normalized_year
+        elif preserved_year not in (None, ""):
+            merged_data["year"] = preserved_year
 
         normalized_price = _safe_int(merged_data.get("price"))
-        if normalized_price is None or not (300 <= normalized_price <= 5_000_000):
-            merged_data.pop("price", None)
-        else:
+        if normalized_price is not None and (300 <= normalized_price <= 5_000_000):
             merged_data["price"] = normalized_price
+        elif preserved_price not in (None, ""):
+            merged_data["price"] = preserved_price
 
         normalized_mileage_km = _safe_int(merged_data.get("mileage_km"))
         if normalized_mileage_km is not None and not (1000 <= normalized_mileage_km <= 900000):
@@ -1714,14 +2463,42 @@ async def analyze_ad_from_images(image_bytes_list, user_lang='uk'):
         elif normalized_mileage_miles is not None:
             merged_data["mileage_miles"] = normalized_mileage_miles
 
-        # If price has no reliable currency evidence, drop price to avoid using document IDs as amount.
+        # If price has no reliable currency evidence, keep detected price and only try to enrich currency.
         if merged_data.get("price") and not merged_data.get("currency"):
             fb_price, fb_currency = _extract_price_currency_from_text(full_ocr_text)
             if fb_price and fb_currency:
                 merged_data["price"] = fb_price
                 merged_data["currency"] = fb_currency
-            else:
-                merged_data.pop("price", None)
+
+        # Improve generic brand_model placeholders from description/text.
+        def _is_generic_brand_model(value: str) -> bool:
+            generic_tokens = {
+                "продається авто", "продается авто", "car for sale", "vehicle for sale", "auto"
+            }
+            normalized = (value or "").strip().lower()
+            return not normalized or normalized in generic_tokens
+
+        def _extract_brand_model_from_text(raw_text: str) -> str:
+            if not raw_text:
+                return ""
+            txt = str(raw_text).upper()
+            patterns = [
+                (r"\bVW\s+PASSAT\b", "Volkswagen Passat B8"),
+                (r"\bVOLKSWAGEN\s+PASSAT\b", "Volkswagen Passat B8"),
+                (r"\bSEAT\s+IBIZA\b", "SEAT Ibiza"),
+                (r"\bTOYOTA\s+COROLLA\b", "Toyota Corolla"),
+            ]
+            for pattern, normalized_name in patterns:
+                if re.search(pattern, txt):
+                    return normalized_name
+            return ""
+
+        if _is_generic_brand_model(str(merged_data.get("brand_model") or "")):
+            extracted_model = _extract_brand_model_from_text(full_ocr_text or merged_data.get("description") or "")
+            if extracted_model:
+                merged_data["brand_model"] = extracted_model
+                if not merged_data.get("title") or _is_generic_brand_model(str(merged_data.get("title") or "")):
+                    merged_data["title"] = extracted_model
 
         # Normalize main mileage field for downstream report logic.
         if not merged_data.get("mileage"):
@@ -1732,6 +2509,19 @@ async def analyze_ad_from_images(image_bytes_list, user_lang='uk'):
                 merged_data["mileage"] = merged_data.get("mileage_km")
                 merged_data["mileage_unit"] = "km"
 
+        if "dashboard_mileage" not in merged_data:
+            merged_data["dashboard_mileage"] = None
+
+        full_total_calls = sum(full_call_counters.values())
+        full_estimated_cost_usd = round(
+            sum(full_call_counters[name] * full_cost_per_call[name] for name in full_call_counters),
+            4,
+        )
+        print(f"DEBUG: FULL_MODE_CALLS = {full_call_counters}")
+        print(f"DEBUG: FULL_MODE_TOTAL_CALLS = {full_total_calls}")
+        print(f"DEBUG: FULL_MODE_ESTIMATED_COST_USD = {full_estimated_cost_usd}")
+
+        print("FINAL BEFORE GPT:", merged_data)
         print(f"DEBUG: ✅ Фінальні зібрані дані: {merged_data}")
         return [merged_data]
 

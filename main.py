@@ -79,6 +79,7 @@ async def main():
     from handlers.system import menu
     from handlers.system import start
     from handlers.buttons import analyze_ad
+    from handlers.buttons import pick_car_quiz
     from handlers.buttons import compare_cars
     from handlers.buttons import calc_expenses
     
@@ -91,6 +92,7 @@ async def main():
     
     dp.include_router(compare_cars.router)
     dp.include_router(analyze_ad.router)
+    dp.include_router(pick_car_quiz.router)
     dp.include_router(menu.router)
     dp.include_router(start.router)
     dp.include_router(calc_expenses.router)
