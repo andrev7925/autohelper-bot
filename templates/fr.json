@@ -1,11 +1,14 @@
 {
-  "meta": {"language_name": "French"},
+  "meta": {
+    "language_name": "French"
+  },
   "preview": {
     "defaults": {
       "deal_text": "le prix semble proche du marché",
       "risk_after_text": "aucun risque immédiat évident",
       "summary_text": "Une vérification supplémentaire est nécessaire avant décision",
-      "missing_value": "—"
+      "missing_value": "—",
+      "upsell_hint": "risques cachés et coût réel de possession"
     },
     "labels": {
       "price": "Prix",
@@ -27,7 +30,8 @@
       "full_report_title": "Dans le rapport AI complet",
       "vin_line_1": "Vérification de l'historique (VIN):",
       "vin_line_2": "disponible dans la version étendue (Pro + VIN)",
-      "actions_title": "Actions disponibles"
+      "actions_title": "Actions disponibles",
+      "upsell_title": "📌 Dans le rapport complet"
     },
     "buttons": {
       "full_report": "[Rapport AI analytique complet]",
@@ -43,13 +47,21 @@
     },
     "loss": {
       "negative": "≈ -{low}–{high}€ de coûts potentiels",
-      "positive": "≈ +{low}–{high}€ d'avantage potentiel"
+      "positive": "≈ +{low}–{high}€ d'avantage potentiel",
+      "potential_costs": "💸 coûts potentiels après achat : {low}–{high}€"
     },
     "missing_core": {
-      "labels": {"year": "année", "mileage": "kilométrage", "price": "prix"},
+      "labels": {
+        "year": "année",
+        "mileage": "kilométrage",
+        "price": "prix"
+      },
       "note": "La note a été réduite de 40% à cause de données manquantes: {missing_labels}. La fiabilité de l'estimation est limitée pour l'instant."
     },
-    "deal_label": {"defined": "évaluation définie", "undefined": "évaluation incertaine"},
+    "deal_label": {
+      "defined": "évaluation définie",
+      "undefined": "évaluation incertaine"
+    },
     "deal_text": {
       "very_risky": "le prix paraît très risqué pour un achat",
       "weak": "le prix paraît faible au vu des risques",
@@ -63,7 +75,12 @@
         "le prix semble proche du marché, mais les données sont insuffisantes pour une estimation précise",
         "l'évaluation du prix est limitée à cause de données clés manquantes",
         "il existe un risque de surpaiement en raison d'informations incomplètes"
-      ]
+      ],
+      "price_below_market": "le prix est inférieur au marché",
+      "price_above_market": "le prix est supérieur au marché",
+      "price_fair_market": "le prix est globalement au niveau du marché",
+      "price_fair_market_range": "le prix est globalement au niveau du marché (≈ {lower}–{upper} {currency})",
+      "limited_data": "l'évaluation du prix est limitée faute de données clés"
     },
     "risk_after": {
       "no_price": "l'évaluation du risque est incomplète sans prix",
@@ -72,9 +89,24 @@
       "medium": "des dépenses sont possibles dans les premiers mois",
       "low": "aucun risque immédiat évident"
     },
-    "quality_warning": {"low": "Les données peuvent être imprécises", "conflict": "Conflit de kilométrage entre les photos et le texte de l'annonce"},
-    "trim_levels": {"basic": "finition de base", "medium": "finition intermédiaire", "high": "finition riche"},
-    "mileage_labels": {"very_low": "très faible", "normal": "normal", "above_norm": "au-dessus de la norme", "high": "élevé", "very_high": "très élevé", "below_norm": "en dessous de la norme", "within_norm": "dans la norme"},
+    "quality_warning": {
+      "low": "Les données peuvent être imprécises",
+      "conflict": "Conflit de kilométrage entre les photos et le texte de l'annonce"
+    },
+    "trim_levels": {
+      "basic": "finition de base",
+      "medium": "finition intermédiaire",
+      "high": "finition riche"
+    },
+    "mileage_labels": {
+      "very_low": "très faible",
+      "normal": "normal",
+      "above_norm": "au-dessus de la norme",
+      "high": "élevé",
+      "very_high": "très élevé",
+      "below_norm": "en dessous de la norme",
+      "within_norm": "dans la norme"
+    },
     "summary": {
       "good": "Bonne option sans signaux critiques",
       "missing_data": "La note est réduite à cause d'un manque de données clés",
@@ -83,8 +115,18 @@
       "beneficial": "Achat potentiellement intéressant",
       "default": "Une vérification supplémentaire est nécessaire avant décision"
     },
-    "next_steps": {"default": ["Il vaut la peine de faire une vérification plus approfondie via le \"Rapport AI analytique complet\".", "Cela aide à ne pas passer à côté de problèmes cachés et de dépenses imprévues."]},
-    "upsell_features": ["analyse plus détaillée de l'état du véhicule", "prévision des pannes possibles", "calcul plus précis des coûts", "points faibles de ce modèle"],
+    "next_steps": {
+      "default": [
+        "Il vaut la peine de faire une vérification plus approfondie via le \"Rapport AI analytique complet\".",
+        "Cela aide à ne pas passer à côté de problèmes cachés et de dépenses imprévues."
+      ]
+    },
+    "upsell_features": [
+      "analyse plus détaillée de l'état du véhicule",
+      "prévision des pannes possibles",
+      "calcul plus précis des coûts",
+      "points faibles de ce modèle"
+    ],
     "risk_catalog": {
       "high_annual_mileage": "kilométrage annuel élevé",
       "intensive_use_possible": "usage intensif possible",
@@ -131,26 +173,101 @@
       "price_below_market_hidden_issues": "prix inférieur au marché, problèmes cachés possibles",
       "missing_mileage_hard_to_assess": "kilométrage absent, état plus difficile à évaluer",
       "mileage_conflict_photo_text": "le kilométrage du texte ne correspond pas au tableau de bord",
-      "mileage_unit_mismatch": "possible incohérence d'unité de kilométrage (km/miles)"
+      "mileage_unit_mismatch": "possible incohérence d'unité de kilométrage (km/miles)",
+      "missing_year_limits_assessment": "l'année du véhicule n'est pas confirmée, l'évaluation du risque est limitée",
+      "missing_model_precision": "le modèle/version exact n’est pas confirmé, la précision de l’estimation est réduite"
     },
     "insight": {
       "first": {
-        "data_gap_neutral": ["Le profil paraît neutre d'après les données disponibles, sans signal critique net.", "Le tableau est mesuré: pas d'alerte forte, mais les données restent limitées.", "Avec les informations actuelles, le profil reste plutôt équilibré sans marqueur négatif fort."],
-        "high": ["Le profil paraît cohérent et stable dans les données disponibles.", "Les signaux actuels décrivent une option solide au quotidien.", "L'ensemble est équilibré, sans déclencheur critique visible."],
-        "mid_clean": ["C'est une option correcte avec un profil de risque modéré.", "L'équilibre du véhicule reste globalement sain.", "Pour ce segment, le profil paraît stable sans drapeau rouge majeur."],
-        "mid_risky": ["C'est une option moyenne avec plusieurs nuances de risque.", "La base est exploitable, mais certains signaux restent mitigés.", "La note est moyenne: certains éléments réduisent la confiance."],
-        "low": ["Le profil paraît risqué avec une marge de sécurité limitée.", "C'est une option plus risquée avec une probabilité de coûts accrue.", "Les signaux sont irréguliers, ce qui relève le niveau de risque."],
-        "very_low": ["Le profil actuel est à haut risque.", "Le risque est élevé avec une faible prévisibilité des coûts.", "C'est l'un des scénarios les plus risqués dans les données actuelles."]
+        "data_gap_neutral": [
+          "Le profil paraît neutre d'après les données disponibles, sans signal critique net.",
+          "Le tableau est mesuré: pas d'alerte forte, mais les données restent limitées.",
+          "Avec les informations actuelles, le profil reste plutôt équilibré sans marqueur négatif fort."
+        ],
+        "high": [
+          "Le profil paraît cohérent et stable dans les données disponibles.",
+          "Les signaux actuels décrivent une option solide au quotidien.",
+          "L'ensemble est équilibré, sans déclencheur critique visible."
+        ],
+        "mid_clean": [
+          "C'est une option correcte avec un profil de risque modéré.",
+          "L'équilibre du véhicule reste globalement sain.",
+          "Pour ce segment, le profil paraît stable sans drapeau rouge majeur."
+        ],
+        "mid_risky": [
+          "C'est une option moyenne avec plusieurs nuances de risque.",
+          "La base est exploitable, mais certains signaux restent mitigés.",
+          "La note est moyenne: certains éléments réduisent la confiance."
+        ],
+        "low": [
+          "Le profil paraît risqué avec une marge de sécurité limitée.",
+          "C'est une option plus risquée avec une probabilité de coûts accrue.",
+          "Les signaux sont irréguliers, ce qui relève le niveau de risque."
+        ],
+        "very_low": [
+          "Le profil actuel est à haut risque.",
+          "Le risque est élevé avec une faible prévisibilité des coûts.",
+          "C'est l'un des scénarios les plus risqués dans les données actuelles."
+        ]
       },
       "second": {
-        "missing_core_data": ["Des données clés manquent, ce qui limite la précision de l'estimation."],
-        "overpriced": ["Le prix paraît supérieur au marché pour ce niveau de signaux."],
-        "underpriced_no_major_risk": ["Le prix paraît inférieur au marché et reste cohérent avec le profil actuel."],
-        "major_mileage_signal": ["Le kilométrage envoie un signal négatif important dans la note."],
-        "medium_risk": ["Les principaux risques se concentrent autour de l'usure et de l'historique d'usage."],
-        "clean_mileage": ["Le kilométrage semble cohérent pour l'âge du véhicule et soutient une estimation plus stable."],
-        "balanced": ["Le profil reste globalement cohérent avec la note obtenue."]
+        "missing_core_data": [
+          "Des données clés manquent, ce qui limite la précision de l'estimation."
+        ],
+        "overpriced": [
+          "Le prix paraît supérieur au marché pour ce niveau de signaux."
+        ],
+        "underpriced_no_major_risk": [
+          "Le prix paraît inférieur au marché et reste cohérent avec le profil actuel."
+        ],
+        "major_mileage_signal": [
+          "Le kilométrage envoie un signal négatif important dans la note."
+        ],
+        "medium_risk": [
+          "Les principaux risques se concentrent autour de l'usure et de l'historique d'usage."
+        ],
+        "clean_mileage": [
+          "Le kilométrage semble cohérent pour l'âge du véhicule et soutient une estimation plus stable."
+        ],
+        "balanced": [
+          "Le profil reste globalement cohérent avec la note obtenue."
+        ]
+      },
+      "rule": {
+        "missing_core_data": "Des données clés manquent, cette conclusion reste donc préliminaire.",
+        "fair_price_high_risk": "Le prix est de marché, mais le risque est élevé ; des coûts supplémentaires sont probables.",
+        "underpriced_high_risk": "Le prix paraît attractif, mais des risques élevés peuvent annuler l'avantage.",
+        "overpriced": "Le prix est au-dessus du marché ; il vaut mieux négocier ou chercher une autre option.",
+        "high_risk": "Le risque après achat est élevé ; sans contrôle technique approfondi, cette option est risquée.",
+        "underpriced": "Le prix est sous le marché et peut être intéressant si l'état technique est confirmé.",
+        "default": "Le prix est proche du marché ; la décision finale doit suivre un contrôle technique."
       }
+    },
+    "prompt": {
+      "system_intro": "SYSTEM:\n\nVous êtes un analyste automobile IA.",
+      "task_line": "TÂCHE : produire une préanalyse brève de l’annonce et vérifier prix/risques.",
+      "language_rule": "Répondez uniquement en {language_name}. Pas de mélange de langues.",
+      "tone_rule": "Le ton doit être clair, bref et utile.",
+      "constraints": "N’inventez aucun fait. Utilisez uniquement les données fournies.",
+      "input_title": "DONNÉES D'ENTRÉE :",
+      "instructions_title": "INSTRUCTIONS :",
+      "instructions": [
+        "Utilisez uniquement les données ci-dessous.",
+        "Conservez la structure, les titres et l’ordre.",
+        "Retournez uniquement le texte final, sans commentaires."
+      ],
+      "output_title": "MODÈLE DE SORTIE :",
+      "important_title": "IMPORTANT :",
+      "important": [
+        "Le texte final doit être entièrement en {language_name}.",
+        "N’ajoutez pas de sections supplémentaires."
+      ]
+    },
+    "generated_risks": {
+      "interior_wear": "usure intérieure détectée",
+      "mileage_conflict": "conflit de kilométrage détecté",
+      "mileage_rollback": "possible compteur kilométrique modifié",
+      "mileage_unit_mismatch": "possible incohérence d’unité de kilométrage (km/miles)"
     }
   }
 }

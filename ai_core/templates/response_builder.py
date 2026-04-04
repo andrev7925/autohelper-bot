@@ -6,6 +6,10 @@ from typing import Any
 _TEMPLATE_CACHE: dict[str, dict[str, Any]] = {}
 _TEMPLATE_DIR = Path(__file__).resolve().parents[2] / "templates"
 
+_LANGUAGE_ALIASES = {
+    "ua": "uk",
+}
+
 
 def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     merged: dict[str, Any] = {}
@@ -38,33 +42,40 @@ def _load_lang_file(lang: str) -> dict[str, Any]:
     return data
 
 
-def _load_merged_templates(lang: str) -> dict[str, Any]:
+def _normalize_language(lang: str) -> str:
     normalized = (lang or "en").strip().lower()
-    english = _load_lang_file("en")
-    if normalized == "en":
-        return english
-    local = _load_lang_file(normalized)
-    return _deep_merge(english, local)
+    return _LANGUAGE_ALIASES.get(normalized, normalized)
 
 
 class ResponseBuilder:
     def __init__(self, language: str, seed_data: dict[str, Any] | None = None):
-        self.language = (language or "en").strip().lower()
+        self.language = _normalize_language(language)
         self.seed_data = seed_data or {}
-        self.templates = _load_merged_templates(self.language)
+        self.templates = _load_lang_file(self.language)
 
-    def get(self, key_path: str, default: Any = None) -> Any:
+    def _missing_translation_marker(self, key_path: str) -> str:
+        return f"[MISSING_TRANSLATION:{self.language}:{key_path}]"
+
+    def _resolve(self, key_path: str) -> tuple[bool, Any]:
         node: Any = self.templates
         for key in key_path.split("."):
             if not isinstance(node, dict) or key not in node:
-                return default
+                return False, None
             node = node[key]
+        return True, node
+
+    def get(self, key_path: str, default: Any = None) -> Any:
+        found, node = self._resolve(key_path)
+        if not found:
+            return default
         return node
 
     def text(self, key_path: str, default: str = "", **kwargs: Any) -> str:
-        template = self.get(key_path, default)
+        found, template = self._resolve(key_path)
+        if not found:
+            template = self._missing_translation_marker(key_path)
         if template is None:
-            return ""
+            return default
         if not isinstance(template, str):
             return str(template)
         if not kwargs:

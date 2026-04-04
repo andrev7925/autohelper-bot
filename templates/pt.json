@@ -1,23 +1,273 @@
 {
-  "meta": {"language_name": "Portuguese"},
+  "meta": {
+    "language_name": "Portuguese"
+  },
   "preview": {
-    "defaults": {"deal_text": "o preço parece próximo do mercado", "risk_after_text": "sem sinais claros de risco imediato", "summary_text": "É necessária uma verificação adicional antes da decisão", "missing_value": "—"},
-    "labels": {"price": "Preço", "mileage": "Quilometragem", "deal": "Valor do negócio", "risk_after": "Risco após a compra", "score": "Pontuação", "risks": "Pontos de atenção", "no_risks": "nenhum risco evidente foi identificado com os dados disponíveis"},
-    "sections": {"disclaimer": "Análise preliminar (verificação rápida)", "deal_title": "Valor do negócio", "risk_title": "Risco após a compra", "score_title": "Pontuação", "risks_title": "Pontos de atenção", "insight_title": "O que isso significa", "steps_title": "Se você está considerando este carro", "full_report_title": "No relatório AI completo", "vin_line_1": "Verificação do histórico do veículo (VIN):", "vin_line_2": "disponível na versão estendida (Pro + VIN)", "actions_title": "Ações disponíveis"},
-    "buttons": {"full_report": "[Relatório analítico AI completo]", "pro_vin": "[Verificação Pro + VIN]", "save": "[Salvar carro para comparação]"},
-    "lines": {"trim_line": "Versão: {trim_text}", "mileage_warning": "Aviso de dados: {warning_text}", "market_estimate_range": "Valor de mercado de carros semelhantes: {min}–{max} {currency}", "title_with_year": "{make} {model} {year}", "title_no_year": "{make} {model}"},
-    "loss": {"negative": "≈ -{low}–{high}€ de custos potenciais", "positive": "≈ +{low}–{high}€ de benefício potencial"},
-    "missing_core": {"labels": {"year": "ano", "mileage": "quilometragem", "price": "preço"}, "note": "A pontuação foi reduzida em 40% devido à falta de dados: {missing_labels}. A confiabilidade da estimativa está limitada no momento."},
-    "deal_label": {"defined": "avaliação definida", "undefined": "avaliação incerta"},
-    "deal_text": {"very_risky": "o preço parece muito arriscado para compra", "weak": "o preço parece fraco considerando os riscos", "near_market": "o preço parece próximo do mercado", "overpriced": "o preço parece acima do mercado", "underpriced": "o preço parece abaixo do mercado", "fair": "o preço está no nível do mercado", "good": "o preço pode ser atraente", "no_price": "não é possível avaliar o negócio sem preço", "low_confidence_variants": ["o preço parece próximo do mercado, mas faltam dados para uma estimativa precisa", "a avaliação do preço é limitada por falta de dados-chave", "há risco de pagar demais por informação incompleta"]},
-    "risk_after": {"no_price": "a avaliação de risco está incompleta sem preço", "low_confidence": "o risco após a compra foi avaliado com baixa confiança", "high": "alta probabilidade de custos relevantes", "medium": "podem surgir custos nos primeiros meses", "low": "sem sinais claros de risco imediato"},
-    "quality_warning": {"low": "Os dados podem estar imprecisos", "conflict": "Conflito de quilometragem entre fotos e texto do anúncio"},
-    "trim_levels": {"basic": "versão básica", "medium": "versão intermediária", "high": "versão alta"},
-    "mileage_labels": {"very_low": "muito baixa", "normal": "normal", "above_norm": "acima do normal", "high": "alta", "very_high": "muito alta", "below_norm": "abaixo do normal", "within_norm": "dentro do normal"},
-    "summary": {"good": "Boa opção sem sinais críticos", "missing_data": "Pontuação reduzida por falta de dados-chave", "edge_resource": "O carro parece próximo do limite de desgaste; custos altos são possíveis", "needs_checks": "Precisa de verificação; custos adicionais são possíveis", "beneficial": "Pode ser uma compra vantajosa", "default": "É necessária uma verificação adicional antes da decisão"},
-    "next_steps": {"default": ["Vale a pena fazer uma verificação mais profunda através do \"Relatório analítico completo de AI\".", "Isso ajuda a não deixar passar problemas ocultos e custos inesperados."]},
-    "upsell_features": ["análise mais profunda do estado do carro", "previsão de falhas possíveis", "cálculo mais preciso de custos", "pontos fracos deste modelo"],
-    "risk_catalog": {"high_annual_mileage": "quilometragem anual elevada", "intensive_use_possible": "possível uso intensivo", "dpf_egr_risk": "riscos DPF / EGR", "automatic_service_history": "vale verificar o histórico de serviço da transmissão automática", "suspension_wear": "desgaste da suspensão", "brake_system_wear": "desgaste do sistema de freio", "steering_components_wear": "desgaste de componentes da direção", "age_related_consumables": "consumíveis e vedações relacionados à idade", "egr_turbo_risk": "riscos EGR / turbo", "injectors_fuel_system": "injetores / sistema de combustível", "hybrid_battery_condition": "estado da bateria híbrida", "automatic_high_mileage_risk": "risco da transmissão automática em alta quilometragem", "age_related_issues": "problemas relacionados à idade (vedações, elétrica)", "corrosion_possible": "possível corrosão", "cooling_system_wear": "desgaste do sistema de arrefecimento", "suspension_rubber_wear": "desgaste de componentes de borracha da suspensão", "climate_system_aging": "envelhecimento do ar-condicionado / climatização", "minor_electrical_issues": "risco de pequenas falhas elétricas", "engine_wear": "desgaste do motor", "oil_leak_risk": "risco de vazamento de óleo", "hub_bearing_chassis_wear": "desgaste de rolamentos / chassi", "steering_rack_risk": "risco na caixa de direção", "fuel_system_turbo": "sistema de combustível / turbo", "injectors_hpfp": "injetores / bomba de alta pressão", "hybrid_battery_degradation": "degradação da bateria híbrida", "inverter_battery_cooling": "inversor e arrefecimento da bateria", "oil_consumption_risk": "risco de consumo elevado de óleo", "automatic_transmission_wear": "risco de desgaste da transmissão automática", "clutch_flywheel_risk": "risco de embreagem / volante bimassa", "interior_high_wear": "desgaste elevado do interior", "possible_commercial_use": "possível uso comercial ou intensivo", "likely_intensive_use": "uso intensivo provável", "mileage_interior_mismatch": "a quilometragem não condiz com o estado do interior", "claimed_low_mileage_suspicious": "a baixa quilometragem declarada parece duvidosa", "interior_condition_mismatch": "o estado do interior não corresponde ao anunciado", "unusually_low_mileage_for_age": "quilometragem incomumente baixa para a idade do carro", "carplay_not_confirmed": "a opção CarPlay anunciada não foi confirmada", "import_year_mismatch": "possível importado com diferença no ano de registro", "mileage_above_average_for_year": "quilometragem acima da média para este ano", "unusually_low_mileage_check": "quilometragem incomumente baixa que merece atenção", "possible_rollback": "possível adulteração da quilometragem", "interior_too_good_for_mileage": "o interior parece bom demais para essa quilometragem", "price_below_market_hidden_issues": "preço abaixo do mercado, problemas ocultos são possíveis", "missing_mileage_hard_to_assess": "quilometragem ausente, estado mais difícil de avaliar", "mileage_conflict_photo_text": "a quilometragem do texto não coincide com o painel na foto", "mileage_unit_mismatch": "possível inconsistência de unidade de quilometragem (km/miles)"},
-    "insight": {"first": {"data_gap_neutral": ["Com os dados disponíveis, o perfil parece neutro, sem sinais críticos claros.", "O quadro é contido: não há alertas fortes, mas a profundidade dos dados é limitada.", "Com a informação atual, o perfil parece relativamente equilibrado sem marcadores muito negativos."], "high": ["O perfil parece coerente e estável nos dados disponíveis.", "Os sinais atuais descrevem uma opção sólida para uso normal.", "O quadro geral é estável, sem gatilhos críticos visíveis."], "mid_clean": ["É uma opção normal com perfil de risco moderado.", "O equilíbrio do carro parece razoável no conjunto.", "Para este segmento, o perfil parece estável sem alertas importantes."], "mid_risky": ["É uma opção média com vários nuances de risco.", "A base é utilizável, mas alguns sinais seguem mistos.", "A pontuação é média: alguns detalhes reduzem a confiança."], "low": ["O perfil parece arriscado com pouca margem de segurança.", "É uma opção mais arriscada com maior probabilidade de custos.", "Os sinais são desiguais, por isso o risco fica mais alto."], "very_low": ["O perfil atual é de alto risco.", "O risco é alto e a previsibilidade de custos é baixa.", "Este é um dos cenários mais arriscados nos dados atuais."]}, "second": {"missing_core_data": ["Faltam dados-chave, então a precisão da avaliação é limitada."], "overpriced": ["Pelo preço, o carro parece acima do mercado para este conjunto de sinais."], "underpriced_no_major_risk": ["O preço parece abaixo do mercado e é coerente com o perfil atual."], "major_mileage_signal": ["A quilometragem traz um sinal negativo forte nesta pontuação."], "medium_risk": ["Os principais riscos se concentram em desgaste e histórico de uso."], "clean_mileage": ["A quilometragem parece lógica para a idade do carro e sustenta uma avaliação mais estável."], "balanced": ["No conjunto, o perfil segue coerente com a pontuação obtida."]}}
+    "defaults": {
+      "deal_text": "o preço parece próximo do mercado",
+      "risk_after_text": "sem sinais claros de risco imediato",
+      "summary_text": "É necessária uma verificação adicional antes da decisão",
+      "missing_value": "—",
+      "upsell_hint": "riscos ocultos e custo real de posse"
+    },
+    "labels": {
+      "price": "Preço",
+      "mileage": "Quilometragem",
+      "deal": "Valor do negócio",
+      "risk_after": "Risco após a compra",
+      "score": "Pontuação",
+      "risks": "Pontos de atenção",
+      "no_risks": "nenhum risco evidente foi identificado com os dados disponíveis"
+    },
+    "sections": {
+      "disclaimer": "Análise preliminar (verificação rápida)",
+      "deal_title": "Valor do negócio",
+      "risk_title": "Risco após a compra",
+      "score_title": "Pontuação",
+      "risks_title": "Pontos de atenção",
+      "insight_title": "O que isso significa",
+      "steps_title": "Se você está considerando este carro",
+      "full_report_title": "No relatório AI completo",
+      "vin_line_1": "Verificação do histórico do veículo (VIN):",
+      "vin_line_2": "disponível na versão estendida (Pro + VIN)",
+      "actions_title": "Ações disponíveis",
+      "upsell_title": "📌 No relatório completo"
+    },
+    "buttons": {
+      "full_report": "[Relatório analítico AI completo]",
+      "pro_vin": "[Verificação Pro + VIN]",
+      "save": "[Salvar carro para comparação]"
+    },
+    "lines": {
+      "trim_line": "Versão: {trim_text}",
+      "mileage_warning": "Aviso de dados: {warning_text}",
+      "market_estimate_range": "Valor de mercado de carros semelhantes: {min}–{max} {currency}",
+      "title_with_year": "{make} {model} {year}",
+      "title_no_year": "{make} {model}"
+    },
+    "loss": {
+      "negative": "≈ -{low}–{high}€ de custos potenciais",
+      "positive": "≈ +{low}–{high}€ de benefício potencial",
+      "potential_costs": "💸 custos potenciais após a compra: {low}–{high}€"
+    },
+    "missing_core": {
+      "labels": {
+        "year": "ano",
+        "mileage": "quilometragem",
+        "price": "preço"
+      },
+      "note": "A pontuação foi reduzida em 40% devido à falta de dados: {missing_labels}. A confiabilidade da estimativa está limitada no momento."
+    },
+    "deal_label": {
+      "defined": "avaliação definida",
+      "undefined": "avaliação incerta"
+    },
+    "deal_text": {
+      "very_risky": "o preço parece muito arriscado para compra",
+      "weak": "o preço parece fraco considerando os riscos",
+      "near_market": "o preço parece próximo do mercado",
+      "overpriced": "o preço parece acima do mercado",
+      "underpriced": "o preço parece abaixo do mercado",
+      "fair": "o preço está no nível do mercado",
+      "good": "o preço pode ser atraente",
+      "no_price": "não é possível avaliar o negócio sem preço",
+      "low_confidence_variants": [
+        "o preço parece próximo do mercado, mas faltam dados para uma estimativa precisa",
+        "a avaliação do preço é limitada por falta de dados-chave",
+        "há risco de pagar demais por informação incompleta"
+      ],
+      "price_below_market": "o preço está abaixo do mercado",
+      "price_above_market": "o preço está acima do mercado",
+      "price_fair_market": "o preço está aproximadamente no nível do mercado",
+      "price_fair_market_range": "o preço está aproximadamente no nível do mercado (≈ {lower}–{upper} {currency})",
+      "limited_data": "a avaliação do preço é limitada por falta de dados-chave"
+    },
+    "risk_after": {
+      "no_price": "a avaliação de risco está incompleta sem preço",
+      "low_confidence": "o risco após a compra foi avaliado com baixa confiança",
+      "high": "alta probabilidade de custos relevantes",
+      "medium": "podem surgir custos nos primeiros meses",
+      "low": "sem sinais claros de risco imediato"
+    },
+    "quality_warning": {
+      "low": "Os dados podem estar imprecisos",
+      "conflict": "Conflito de quilometragem entre fotos e texto do anúncio"
+    },
+    "trim_levels": {
+      "basic": "versão básica",
+      "medium": "versão intermediária",
+      "high": "versão alta"
+    },
+    "mileage_labels": {
+      "very_low": "muito baixa",
+      "normal": "normal",
+      "above_norm": "acima do normal",
+      "high": "alta",
+      "very_high": "muito alta",
+      "below_norm": "abaixo do normal",
+      "within_norm": "dentro do normal"
+    },
+    "summary": {
+      "good": "Boa opção sem sinais críticos",
+      "missing_data": "Pontuação reduzida por falta de dados-chave",
+      "edge_resource": "O carro parece próximo do limite de desgaste; custos altos são possíveis",
+      "needs_checks": "Precisa de verificação; custos adicionais são possíveis",
+      "beneficial": "Pode ser uma compra vantajosa",
+      "default": "É necessária uma verificação adicional antes da decisão"
+    },
+    "next_steps": {
+      "default": [
+        "Vale a pena fazer uma verificação mais profunda através do \"Relatório analítico completo de AI\".",
+        "Isso ajuda a não deixar passar problemas ocultos e custos inesperados."
+      ]
+    },
+    "upsell_features": [
+      "análise mais profunda do estado do carro",
+      "previsão de falhas possíveis",
+      "cálculo mais preciso de custos",
+      "pontos fracos deste modelo"
+    ],
+    "risk_catalog": {
+      "high_annual_mileage": "quilometragem anual elevada",
+      "intensive_use_possible": "possível uso intensivo",
+      "dpf_egr_risk": "riscos DPF / EGR",
+      "automatic_service_history": "vale verificar o histórico de serviço da transmissão automática",
+      "suspension_wear": "desgaste da suspensão",
+      "brake_system_wear": "desgaste do sistema de freio",
+      "steering_components_wear": "desgaste de componentes da direção",
+      "age_related_consumables": "consumíveis e vedações relacionados à idade",
+      "egr_turbo_risk": "riscos EGR / turbo",
+      "injectors_fuel_system": "injetores / sistema de combustível",
+      "hybrid_battery_condition": "estado da bateria híbrida",
+      "automatic_high_mileage_risk": "risco da transmissão automática em alta quilometragem",
+      "age_related_issues": "problemas relacionados à idade (vedações, elétrica)",
+      "corrosion_possible": "possível corrosão",
+      "cooling_system_wear": "desgaste do sistema de arrefecimento",
+      "suspension_rubber_wear": "desgaste de componentes de borracha da suspensão",
+      "climate_system_aging": "envelhecimento do ar-condicionado / climatização",
+      "minor_electrical_issues": "risco de pequenas falhas elétricas",
+      "engine_wear": "desgaste do motor",
+      "oil_leak_risk": "risco de vazamento de óleo",
+      "hub_bearing_chassis_wear": "desgaste de rolamentos / chassi",
+      "steering_rack_risk": "risco na caixa de direção",
+      "fuel_system_turbo": "sistema de combustível / turbo",
+      "injectors_hpfp": "injetores / bomba de alta pressão",
+      "hybrid_battery_degradation": "degradação da bateria híbrida",
+      "inverter_battery_cooling": "inversor e arrefecimento da bateria",
+      "oil_consumption_risk": "risco de consumo elevado de óleo",
+      "automatic_transmission_wear": "risco de desgaste da transmissão automática",
+      "clutch_flywheel_risk": "risco de embreagem / volante bimassa",
+      "interior_high_wear": "desgaste elevado do interior",
+      "possible_commercial_use": "possível uso comercial ou intensivo",
+      "likely_intensive_use": "uso intensivo provável",
+      "mileage_interior_mismatch": "a quilometragem não condiz com o estado do interior",
+      "claimed_low_mileage_suspicious": "a baixa quilometragem declarada parece duvidosa",
+      "interior_condition_mismatch": "o estado do interior não corresponde ao anunciado",
+      "unusually_low_mileage_for_age": "quilometragem incomumente baixa para a idade do carro",
+      "carplay_not_confirmed": "a opção CarPlay anunciada não foi confirmada",
+      "import_year_mismatch": "possível importado com diferença no ano de registro",
+      "mileage_above_average_for_year": "quilometragem acima da média para este ano",
+      "unusually_low_mileage_check": "quilometragem incomumente baixa que merece atenção",
+      "possible_rollback": "possível adulteração da quilometragem",
+      "interior_too_good_for_mileage": "o interior parece bom demais para essa quilometragem",
+      "price_below_market_hidden_issues": "preço abaixo do mercado, problemas ocultos são possíveis",
+      "missing_mileage_hard_to_assess": "quilometragem ausente, estado mais difícil de avaliar",
+      "mileage_conflict_photo_text": "a quilometragem do texto não coincide com o painel na foto",
+      "mileage_unit_mismatch": "possível inconsistência de unidade de quilometragem (km/miles)",
+      "missing_year_limits_assessment": "o ano do veículo não foi confirmado, a avaliação de risco é limitada",
+      "missing_model_precision": "o modelo/versão exato não foi confirmado, a precisão da estimativa é menor"
+    },
+    "insight": {
+      "first": {
+        "data_gap_neutral": [
+          "Com os dados disponíveis, o perfil parece neutro, sem sinais críticos claros.",
+          "O quadro é contido: não há alertas fortes, mas a profundidade dos dados é limitada.",
+          "Com a informação atual, o perfil parece relativamente equilibrado sem marcadores muito negativos."
+        ],
+        "high": [
+          "O perfil parece coerente e estável nos dados disponíveis.",
+          "Os sinais atuais descrevem uma opção sólida para uso normal.",
+          "O quadro geral é estável, sem gatilhos críticos visíveis."
+        ],
+        "mid_clean": [
+          "É uma opção normal com perfil de risco moderado.",
+          "O equilíbrio do carro parece razoável no conjunto.",
+          "Para este segmento, o perfil parece estável sem alertas importantes."
+        ],
+        "mid_risky": [
+          "É uma opção média com vários nuances de risco.",
+          "A base é utilizável, mas alguns sinais seguem mistos.",
+          "A pontuação é média: alguns detalhes reduzem a confiança."
+        ],
+        "low": [
+          "O perfil parece arriscado com pouca margem de segurança.",
+          "É uma opção mais arriscada com maior probabilidade de custos.",
+          "Os sinais são desiguais, por isso o risco fica mais alto."
+        ],
+        "very_low": [
+          "O perfil atual é de alto risco.",
+          "O risco é alto e a previsibilidade de custos é baixa.",
+          "Este é um dos cenários mais arriscados nos dados atuais."
+        ]
+      },
+      "second": {
+        "missing_core_data": [
+          "Faltam dados-chave, então a precisão da avaliação é limitada."
+        ],
+        "overpriced": [
+          "Pelo preço, o carro parece acima do mercado para este conjunto de sinais."
+        ],
+        "underpriced_no_major_risk": [
+          "O preço parece abaixo do mercado e é coerente com o perfil atual."
+        ],
+        "major_mileage_signal": [
+          "A quilometragem traz um sinal negativo forte nesta pontuação."
+        ],
+        "medium_risk": [
+          "Os principais riscos se concentram em desgaste e histórico de uso."
+        ],
+        "clean_mileage": [
+          "A quilometragem parece lógica para a idade do carro e sustenta uma avaliação mais estável."
+        ],
+        "balanced": [
+          "No conjunto, o perfil segue coerente com a pontuação obtida."
+        ]
+      },
+      "rule": {
+        "missing_core_data": "Faltam dados-chave, por isso esta conclusão é preliminar.",
+        "fair_price_high_risk": "O preço está no mercado, mas o risco é alto; custos adicionais são prováveis.",
+        "underpriced_high_risk": "O preço parece atrativo, mas riscos altos podem anular a vantagem.",
+        "overpriced": "O preço está acima do mercado; vale negociar ou procurar outra opção.",
+        "high_risk": "O risco após a compra é alto; sem verificação técnica profunda, esta opção é insegura.",
+        "underpriced": "O preço está abaixo do mercado e pode ser uma boa compra se o estado técnico for confirmado.",
+        "default": "O preço está perto do mercado; a decisão final deve ser tomada após inspeção técnica."
+      }
+    },
+    "prompt": {
+      "system_intro": "SYSTEM:\n\nVocê é um analista automotivo de IA.",
+      "task_line": "TAREFA: faça uma pré-análise breve do anúncio e avalie preço e riscos.",
+      "language_rule": "Responda apenas em {language_name}. Não misture idiomas.",
+      "tone_rule": "O tom deve ser claro, curto e útil.",
+      "constraints": "Não invente fatos. Use apenas os dados fornecidos.",
+      "input_title": "DADOS DE ENTRADA:",
+      "instructions_title": "INSTRUÇÕES:",
+      "instructions": [
+        "Use apenas os dados de entrada abaixo.",
+        "Mantenha estrutura, títulos e ordem.",
+        "Retorne apenas o texto final, sem comentários."
+      ],
+      "output_title": "MODELO DE SAÍDA:",
+      "important_title": "IMPORTANTE:",
+      "important": [
+        "O texto final deve estar totalmente em {language_name}.",
+        "Não adicione seções extras."
+      ]
+    },
+    "generated_risks": {
+      "interior_wear": "desgaste interno detectado",
+      "mileage_conflict": "conflito de quilometragem detectado",
+      "mileage_rollback": "possível adulteração da quilometragem",
+      "mileage_unit_mismatch": "possível conflito de unidade de quilometragem (km/miles)"
+    }
   }
 }

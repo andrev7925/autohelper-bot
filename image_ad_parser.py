@@ -433,7 +433,7 @@ def clean_plate_text(text: str) -> str:
     return text
 
 
-PLATE_REGEX = r"^\d{2,3}-[A-Z]-\d{1,5}$"
+PLATE_REGEX = r"^\d{2,3}-[A-Z]{1,2}-\d{1,6}$"
 
 
 def normalize_plate(plate: str) -> str:
@@ -444,7 +444,7 @@ def normalize_plate(plate: str) -> str:
     normalized = re.sub(r"-+", "-", normalized)
 
     compact = re.sub(r"[^A-Z0-9]", "", normalized)
-    m = re.match(r"^(\d{2,3})([A-Z])(\d{1,5})$", compact)
+    m = re.match(r"^(\d{2,3})([A-Z]{1,2})(\d{1,6})$", compact)
     if m:
         return f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
 
@@ -1316,14 +1316,34 @@ Return ONLY one valid JSON object with this exact schema:
 }
 Rules:
 - Extract only explicitly visible data from images.
+- Never guess values from blurry indicators. If digits or units are not clearly readable, leave the field empty.
 - For mileage_unit use:
     - "km" when the odometer or text clearly shows kilometres (km, км, kilometre, kilometrage, kilometraggio, километри, etc.).
     - "miles" when the odometer or text clearly shows miles (mile, miles, mi, mil, mille, meilen, миль, мили, миля, тыс. миль, etc.).
+- If mileage digits are visible but the unit is not crystal clear, return both mileage and mileage_unit as empty.
+- Return raw odometer mileage in its original unit only. Do not convert miles to km or km to miles.
 - Recognise words for kilometres and miles in these languages: Ukrainian, Russian, English, Spanish, Portuguese, Turkish, French, German.
 - If units are unclear, choose the unit that best matches what is written near the number (never guess from country alone).
+- If listing text explicitly says miles/km and dashboard is blurry, prefer the explicit listing text.
 - Prioritize evidence in this order: plate -> NCT/registration docs -> other visible text.
+- Never return plate_year unless the plate itself is clearly readable.
 - Keep only one resolved value per field.
 - No explanations, no markdown, JSON only."""
+
+
+def _build_preview_batch_prompt(market_context: dict | None = None) -> str:
+    prompt = PREVIEW_BATCH_PROMPT
+    country = str((market_context or {}).get("country") or "").strip().lower()
+    if country == "ireland":
+        prompt += """
+
+COUNTRY PRIORITY: Ireland
+- Prioritize Irish registration plates if visible.
+- Irish plate examples: 10-D-12345, 131-D-12345, 231-D-12345, 10D12345, 131D12345.
+- If an Irish plate is clearly readable, return plate_number and plate_year.
+- If the county letter is visible but separators are missing, normalize to Irish format.
+"""
+    return prompt
 
 
 def _parse_json_from_gpt_response(text: str) -> dict:
@@ -1365,7 +1385,78 @@ def _select_best_preview_fallback_image(images: list[Image.Image]) -> Image.Imag
     return best
 
 
-def gpt4v_extract_preview_batch(images: list[Image.Image], user_lang: str = "uk") -> dict:
+def _select_top_preview_plate_images(images: list[Image.Image], limit: int = 3) -> list[Image.Image]:
+    if not images or limit <= 0:
+        return []
+
+    scored: list[tuple[float, Image.Image]] = []
+    for img in images:
+        w, h = img.size
+        area_score = float(w * h)
+        aspect_bonus = 0.0
+        if h > 0 and 1.2 <= (w / float(h)) <= 2.6:
+            aspect_bonus = 0.2 * area_score
+        scored.append((area_score + aspect_bonus, img))
+
+    scored.sort(key=lambda item: item[0], reverse=True)
+    return [item[1] for item in scored[:limit]]
+
+
+PLATE_ONLY_PROMPT_IRL = """Extract only Irish registration plate from this image.
+Return JSON only:
+{
+  \"plate_number\": \"\"
+}
+
+Rules:
+- Read only clearly visible plate characters.
+- If plate is not clearly readable, return empty string.
+- Do not guess hidden characters.
+- Irish examples: 10-D-12345, 131-D-12345, 10D12345.
+"""
+
+
+def gpt4v_extract_irish_plate_candidate(image: Image.Image) -> str | None:
+    img_b64 = _prepare_image_b64_for_vision(image, max_width=1400, quality=80)
+    response = openai.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {"role": "system", "content": PLATE_ONLY_PROMPT_IRL},
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": "data:image/jpeg;base64," + img_b64},
+                    }
+                ],
+            },
+        ],
+        max_tokens=120,
+        temperature=0.0,
+        top_p=1.0,
+    )
+
+    text = (response.choices[0].message.content or "").strip()
+    plate_raw = ""
+    try:
+        parsed = _parse_json_from_gpt_response(text)
+        plate_raw = str(parsed.get("plate_number") or "").strip()
+    except Exception:
+        plate_raw = ""
+
+    # Деякі відповіді моделі можуть бути не JSON; дістаємо найбільш схожий номер напряму з тексту.
+    if not plate_raw:
+        compact_text = re.sub(r"[^A-Za-z0-9\-]", "", text or "").upper()
+        m = re.search(r"(\d{2,3}-?[A-Z]{1,2}-?\d{1,6})", compact_text)
+        if m:
+            plate_raw = m.group(1)
+
+    plate = normalize_plate(plate_raw)
+    return plate if plate and is_valid_irish_plate(plate) else None
+
+
+def gpt4v_extract_preview_batch(images: list[Image.Image], user_lang: str = "uk", market_context: dict | None = None) -> dict:
     if not images:
         return {}
     content = []
@@ -1379,7 +1470,7 @@ def gpt4v_extract_preview_batch(images: list[Image.Image], user_lang: str = "uk"
     response = openai.chat.completions.create(
         model="gpt-4o",
         messages=[
-            {"role": "system", "content": PREVIEW_BATCH_PROMPT},
+            {"role": "system", "content": _build_preview_batch_prompt(market_context)},
             {"role": "user", "content": content},
         ],
         max_tokens=900,
@@ -1427,7 +1518,7 @@ async def _analyze_ad_from_images_preview(image_bytes_list, user_lang='uk', mark
     raw_data = {}
     try:
         preview_call_counters["batch_extract"] += 1
-        raw_data = await asyncio.to_thread(gpt4v_extract_preview_batch, images, user_lang)
+        raw_data = await asyncio.to_thread(gpt4v_extract_preview_batch, images, user_lang, market_context)
         if not isinstance(raw_data, dict) or not raw_data:
             raise ValueError("empty batch result")
         print("DEBUG: BATCH_RESPONSE_SUCCESS")
@@ -1437,12 +1528,45 @@ async def _analyze_ad_from_images_preview(image_bytes_list, user_lang='uk', mark
         if best_image is None:
             return []
         preview_call_counters["single_fallback"] += 1
-        raw_data = await asyncio.to_thread(gpt4v_extract_preview_batch, [best_image], user_lang)
+        raw_data = await asyncio.to_thread(gpt4v_extract_preview_batch, [best_image], user_lang, market_context)
         print("DEBUG: BATCH_RESPONSE_SUCCESS")
 
     plate_raw = str(raw_data.get("plate_number") or raw_data.get("license_plate") or "").strip()
     normalized_plate = normalize_plate(plate_raw)
     final_plate = normalized_plate if normalized_plate and is_valid_irish_plate(normalized_plate) else None
+
+    market_country = str((market_context or {}).get("country") or "").strip().lower()
+    if not final_plate and market_country == "ireland":
+        ocr_plate_candidates = []
+        for img in images:
+            try:
+                ocr_plate = await asyncio.to_thread(extract_plate_paddle, img)
+            except Exception as plate_err:
+                print(f"WARN: preview plate OCR fallback failed: {plate_err}")
+                continue
+            normalized_ocr_plate = normalize_plate(ocr_plate or "")
+            if normalized_ocr_plate and is_valid_irish_plate(normalized_ocr_plate):
+                ocr_plate_candidates.append(normalized_ocr_plate)
+
+        if not ocr_plate_candidates:
+            # Paddle може падати на деяких Windows/oneDNN збірках: дублюємо fallback через GPT-Vision.
+            for img in _select_top_preview_plate_images(images, limit=3):
+                try:
+                    gpt_plate = await asyncio.to_thread(gpt4v_extract_irish_plate_candidate, img)
+                except Exception as plate_err:
+                    print(f"WARN: preview plate GPT fallback failed: {plate_err}")
+                    continue
+                if gpt_plate:
+                    ocr_plate_candidates.append(gpt_plate)
+            print(f"DEBUG: preview GPT plate candidates = {ocr_plate_candidates}")
+
+        resolved_plate, resolved_confidence = resolve_plate(ocr_plate_candidates)
+        print(f"DEBUG: preview resolved plate = {resolved_plate}, confidence = {resolved_confidence}")
+        if resolved_plate and is_valid_irish_plate(resolved_plate):
+            final_plate = resolved_plate
+            raw_data["plate_number"] = resolved_plate
+            raw_data["license_plate"] = resolved_plate
+            raw_data["plate_confidence"] = max(float(raw_data.get("plate_confidence") or 0.0), resolved_confidence)
 
     plate_year_value = _to_int_or_none(raw_data.get("plate_year"))
     registration_year = _to_int_or_none(raw_data.get("registration_year"))
@@ -1452,9 +1576,9 @@ async def _analyze_ad_from_images_preview(image_bytes_list, user_lang='uk', mark
         mileage = None
 
     derived_plate_year = extract_year_from_plate(final_plate) if final_plate else None
-    plate_year = plate_year_value or derived_plate_year
+    plate_year = (plate_year_value or derived_plate_year) if final_plate else None
 
-    if plate_year is not None:
+    if final_plate and plate_year is not None:
         year = plate_year
         year_source = "plate_inferred"
     elif registration_year is not None:
@@ -1501,7 +1625,7 @@ async def _analyze_ad_from_images_preview(image_bytes_list, user_lang='uk', mark
         "make_model_source": "vision_batch",
         "plate_number": final_plate,
         "license_plate": final_plate or "",
-        "plate_confidence": 1.0 if final_plate else 0.0,
+        "plate_confidence": float(raw_data.get("plate_confidence") or (1.0 if final_plate else 0.0)),
         "plate_year": plate_year,
         "registration_year": registration_year,
         "year_mismatch": year_mismatch,

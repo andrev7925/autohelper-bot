@@ -2,6 +2,7 @@ import unittest
 
 from ai_core.context.ireland import get_ireland_market_context
 from ai_core.pipeline.normalizer import normalize_vehicle_data
+from handlers.buttons.analyze_ad import _merge_site_data
 
 
 class PriceNormalizerTests(unittest.TestCase):
@@ -115,6 +116,34 @@ class PriceNormalizerTests(unittest.TestCase):
 
         self.assertIn(203800, normalized.get("text_mileage_candidates") or [])
 
+    def test_service_km_is_ignored_and_short_mileage_is_corrected(self):
+        sample = {
+            "year": 2014,
+            "text": "Timing belt replaced 2000 km ago\nMileage 292 km\nPrice 4500€",
+            "price": "4500",
+            "currency": "EUR",
+        }
+
+        normalized = normalize_vehicle_data(sample, self.ireland)
+
+        self.assertEqual(normalized.get("mileage_km"), 292000)
+        self.assertEqual(normalized.get("mileage"), 292000)
+        self.assertEqual(normalized.get("mileage_confidence"), "low")
+        self.assertEqual(normalized.get("mileage_note"), "interpreted as thousands (likely shorthand)")
+
+    def test_recent_car_short_mileage_is_not_auto_corrected(self):
+        sample = {
+            "year": 2025,
+            "text": "Mileage 292 km\nPrice 31000€",
+            "price": "31000",
+            "currency": "EUR",
+        }
+
+        normalized = normalize_vehicle_data(sample, self.ireland)
+
+        self.assertEqual(normalized.get("mileage_km"), 292)
+        self.assertEqual(normalized.get("mileage"), 292)
+
     def test_spanish_kilometraje_is_supported(self):
         sample = {
             "text": "Kilometraje 203.800 km\nPrecio 12500",
@@ -147,6 +176,115 @@ class PriceNormalizerTests(unittest.TestCase):
         normalized = normalize_vehicle_data(sample, self.ireland)
 
         self.assertIn(203800, normalized.get("text_mileage_candidates") or [])
+
+    def test_merge_prefers_text_miles_over_photo_unit_guess(self):
+        photo_data = {
+            "mileage": 230072,
+            "mileage_km": 230072,
+            "mileage_unit": "km",
+            "source": "preview_batch",
+        }
+        text_data = {
+            "text": "Пробег: 230,000 миль",
+            "mileage": "230000",
+            "mileage_miles": "230000",
+            "mileage_km": "370148",
+            "mileage_unit": "miles",
+        }
+
+        merged = _merge_site_data(photo_data, text_data)
+
+        self.assertEqual(merged.get("mileage_unit"), "miles")
+        self.assertEqual(int(merged.get("mileage")), 230000)
+        self.assertEqual(int(merged.get("mileage_miles")), 230000)
+        self.assertEqual(int(merged.get("mileage_km")), 370148)
+
+    def test_explicit_text_miles_override_blurry_photo_km_guess(self):
+        sample = {
+            "make": "Nissan",
+            "model": "Qashqai",
+            "year": 2010,
+            "mileage": 230000,
+            "mileage_km": 230072,
+            "mileage_miles": "230000",
+            "mileage_unit": "miles",
+            "text": "Пробег: 230,000 миль (в основном трасса)",
+            "price": "2900",
+            "currency": "EUR",
+        }
+
+        normalized = normalize_vehicle_data(sample, self.ireland)
+
+        self.assertEqual(normalized.get("mileage"), 230000)
+        self.assertEqual(normalized.get("mileage_km"), 370148)
+        self.assertEqual(normalized.get("mileage_conflict"), False)
+        self.assertEqual(normalized.get("mileage_confidence"), "high")
+
+    def test_noisy_title_keeps_clean_model_name(self):
+        sample = {
+            "make": "Nissan",
+            "model": "",
+            "title": "Nissan Qashqai +2 • 7 мест • 1.5 дизель • Панорама • Камера",
+            "text": "Цена 2900€\nПробег: 230,000 миль",
+            "price": "2900",
+            "currency": "EUR",
+            "mileage": "230000",
+            "mileage_miles": "230000",
+            "mileage_km": "370148",
+            "mileage_unit": "miles",
+        }
+
+        normalized = normalize_vehicle_data(sample, self.ireland)
+
+        self.assertEqual(normalized.get("make"), "Nissan")
+        self.assertEqual(normalized.get("model"), "Qashqai +2")
+
+    def test_mileage_priority_listing_text_over_odometer_and_document(self):
+        sample = {
+            "mileage": "180000",
+            "mileage_km": "180000",
+            "mileage_unit": "km",
+            "dashboard_mileage": "200000",
+            "text": "Пробег: 230,000 миль",
+        }
+
+        normalized = normalize_vehicle_data(sample, self.ireland)
+
+        self.assertEqual(normalized.get("mileage_source"), "listing_text")
+        self.assertEqual(normalized.get("mileage_unit"), "miles")
+        self.assertEqual(normalized.get("mileage"), 230000)
+        self.assertEqual(normalized.get("mileage_km"), 370148)
+
+    def test_mileage_priority_odometer_over_document_when_no_text(self):
+        sample = {
+            "mileage": "180000",
+            "mileage_km": "180000",
+            "mileage_unit": "km",
+            "dashboard_mileage": "205500",
+            "text": "NCT till 2026",
+        }
+
+        normalized = normalize_vehicle_data(sample, self.ireland)
+
+        self.assertEqual(normalized.get("mileage_source"), "odometer")
+        self.assertEqual(normalized.get("mileage_unit"), "km")
+        self.assertEqual(normalized.get("mileage"), 205500)
+        self.assertEqual(normalized.get("mileage_km"), 205500)
+
+    def test_mileage_priority_document_when_text_and_odometer_missing(self):
+        sample = {
+            "mileage": "230000",
+            "mileage_miles": "230000",
+            "mileage_unit": "miles",
+            "text": "good condition",
+        }
+
+        normalized = normalize_vehicle_data(sample, self.ireland)
+
+        self.assertEqual(normalized.get("mileage_source"), "document")
+        self.assertEqual(normalized.get("mileage_unit"), "miles")
+        self.assertEqual(normalized.get("mileage"), 230000)
+        self.assertEqual(normalized.get("mileage_km"), 370148)
 
 
 if __name__ == "__main__":

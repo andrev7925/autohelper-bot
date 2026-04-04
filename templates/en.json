@@ -27,7 +27,7 @@
       "risks_title": "What to watch",
       "insight_title": "What this means",
       "steps_title": "If you are considering this specific car",
-      "upsell_title": "",
+      "upsell_title": "📌 In the full report",
       "full_report_title": "In the full AI report",
       "vin_line_1": "Vehicle history check (VIN):",
       "vin_line_2": "available in the extended version (Pro + VIN)",
@@ -39,7 +39,7 @@
       "save": "[Save car for comparison]"
     },
     "lines": {
-      "title_with_year": "{make} {model} {year}",
+      "title_with_year": "{make} {model} ({year})",
       "title_no_year": "{make} {model}",
       "trim_line": "Trim: {trim_text}",
       "mileage_warning": "Data warning: {warning_text}",
@@ -47,7 +47,8 @@
     },
     "loss": {
       "negative": "≈ -{low}–{high}€ potential costs",
-      "positive": "≈ +{low}–{high}€ potential benefit"
+      "positive": "≈ +{low}–{high}€ potential benefit",
+      "potential_costs": "💸 potential post-purchase costs: {low}–{high}€"
     },
     "prompt": {
       "system_intro": "SYSTEM:\n\nYou are an AI vehicle analyst.",
@@ -97,6 +98,11 @@
       "overpriced": "price looks above market",
       "underpriced": "price looks below market",
       "fair": "fair market level",
+      "limited_data": "price evaluation is limited due to missing key data",
+      "price_below_market": "price looks favorable relative to the market",
+      "price_above_market": "price looks overpriced relative to the market",
+      "price_fair_market": "price matches the market",
+      "price_fair_market_range": "price is roughly at market level (≈ {lower}–{upper} {currency})",
       "good": "price may be attractive",
       "no_price": "cannot evaluate deal fairness without price",
       "low_confidence_variants": [
@@ -154,7 +160,8 @@
       "deeper risk analysis for this exact model",
       "estimated post-purchase ownership costs",
       "check of frequent technical weak points",
-      "structured comparison before final decision"
+      "structured comparison before final decision",
+      "tips to negotiate a lower price"
     ],
     "risk_catalog": {
       "high_annual_mileage": "high annual mileage",
@@ -202,63 +209,19 @@
       "price_below_market_hidden_issues": "price is below market, hidden issues are possible",
       "missing_mileage_hard_to_assess": "mileage is missing, condition is harder to assess",
       "mileage_conflict_photo_text": "mileage in listing text does not match dashboard photo",
-      "mileage_unit_mismatch": "possible mileage unit mismatch (km/miles)"
+      "mileage_unit_mismatch": "possible mileage unit mismatch (km/miles)",
+      "missing_year_limits_assessment": "vehicle year is not confirmed, so risk assessment is limited",
+      "missing_model_precision": "exact model/version is not confirmed, so estimate precision is lower"
     },
     "insight": {
-      "first": {
-        "data_gap_neutral": [
-          "Available data looks mostly neutral, without explicit critical triggers.",
-          "The profile is restrained: no sharp risk markers, but data depth is limited.",
-          "Within current input, the picture is mostly even and not aggressively negative."
-        ],
-        "high": [
-          "Current profile looks balanced and stable.",
-          "Signals indicate a strong working option in current data.",
-          "The overall picture is steady with no critical triggers."
-        ],
-        "mid_clean": [
-          "This is a normal working option with a moderate risk profile.",
-          "The option looks balanced without critical skew.",
-          "For this segment, the profile is stable with no major red flags."
-        ],
-        "mid_risky": [
-          "This is an average option with several risk nuances.",
-          "The option is workable, but risk signals are mixed.",
-          "The score is average: some details reduce confidence."
-        ],
-        "low": [
-          "The profile looks risky with limited safety margin.",
-          "This is a riskier option with increased cost probability.",
-          "Signals are uneven, so risk is elevated here."
-        ],
-        "very_low": [
-          "Current profile is high risk.",
-          "Risk is high with weak cost predictability.",
-          "This is one of the riskiest scenarios in current data."
-        ]
-      },
-      "second": {
-        "missing_core_data": [
-          "Key inputs are incomplete, so estimate confidence is limited."
-        ],
-        "overpriced": [
-          "Price appears above market for this signal quality."
-        ],
-        "underpriced_no_major_risk": [
-          "Price appears below market and is consistent with current risk profile."
-        ],
-        "major_mileage_signal": [
-          "Mileage signals are a major negative factor in this score."
-        ],
-        "medium_risk": [
-          "Main risks are concentrated around wear and usage history."
-        ],
-        "clean_mileage": [
-          "Mileage looks consistent for the vehicle age and supports a stable estimate."
-        ],
-        "balanced": [
-          "Signals are internally consistent with the resulting score."
-        ]
+      "rule": {
+        "missing_core_data": "Key data is missing, so this is only a preliminary conclusion.",
+        "fair_price_high_risk": "The price is fair, but mileage is very high, so post-purchase spending is very likely.",
+        "underpriced_high_risk": "The price looks attractive, but high risks may wipe out that benefit.",
+        "overpriced": "The price is above market, so negotiation is strongly recommended.",
+        "high_risk": "Post-purchase risk is high, so this option is unsafe without deeper checks.",
+        "underpriced": "The price is below market and can be a good deal if technical condition is confirmed.",
+        "default": "The price is close to market; make the final decision only after a technical inspection."
       }
     }
   }

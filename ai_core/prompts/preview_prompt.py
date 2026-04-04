@@ -24,6 +24,51 @@ def _has_numeric_price(value) -> bool:
         return False
 
 
+def _localized_no_price_text(user_language: str) -> str:
+    lang = str(user_language or "").strip().lower()
+    mapping = {
+        "uk": "не вказана",
+        "ru": "не указана",
+        "en": "not specified",
+        "es": "no indicada",
+        "pt": "não informada",
+        "tr": "belirtilmedi",
+        "fr": "non indiqué",
+        "de": "nicht angegeben",
+    }
+    return mapping.get(lang, "not specified")
+
+
+def _localized_estimate_used_note(user_language: str) -> str:
+    lang = str(user_language or "").strip().lower()
+    mapping = {
+        "uk": "ціна не вказана — використовується приблизна оцінка ринку",
+        "ru": "цена не указана — используется приблизительная оценка рынка",
+        "en": "price is missing — approximate market estimate is used",
+        "es": "no se indicó el precio — se usa una estimación aproximada del mercado",
+        "pt": "preço não informado — usada estimativa aproximada de mercado",
+        "tr": "fiyat belirtilmedi — yaklaşık piyasa tahmini kullanılıyor",
+        "fr": "prix non indiqué — estimation de marché approximative utilisée",
+        "de": "Preis fehlt — es wird eine ungefähre Marktschätzung verwendet",
+    }
+    return mapping.get(lang, "price is missing — approximate market estimate is used")
+
+
+def _localized_price_inferred_note(user_language: str) -> str:
+    lang = str(user_language or "").strip().lower()
+    mapping = {
+        "uk": "ціну визначено за контекстом оголошення",
+        "ru": "цена определена автоматически (по контексту)",
+        "en": "price was inferred from listing context",
+        "es": "el precio se determinó por el contexto del anuncio",
+        "pt": "o preço foi inferido pelo contexto do anúncio",
+        "tr": "fiyat ilan bağlamına göre çıkarıldı",
+        "fr": "le prix a été déduit du contexte de l'annonce",
+        "de": "der Preis wurde aus dem Anzeigenkontext abgeleitet",
+    }
+    return mapping.get(lang, "price was inferred from listing context")
+
+
 def build_preview_prompt(
     vehicle_data,
     market_context,
@@ -72,11 +117,9 @@ def build_preview_prompt(
     quality_warning_text = _safe_line(quality_warning_text)
     trim_text = _safe_line(trim_text)
 
-    if trim_text:
-        trim_line = builder.text("preview.lines.trim_line", default="", trim_text=trim_text)
-        trim_block = f"⚙ {trim_line}\n"
-    else:
-        trim_block = ""
+    trim_value = trim_text or defaults["missing_value"]
+    trim_line = builder.text("preview.lines.trim_line", default="", trim_text=trim_value)
+    trim_block = f"⚙ {trim_line}\n" if trim_line else ""
 
     risks = [str(item).strip() for item in (risks or []) if str(item).strip()]
     risk_lines = _join_bullets(risks[:3]) if risks else f"• {labels['no_risks']}"
@@ -97,7 +140,7 @@ def build_preview_prompt(
     if has_price:
         price_block = f"💰 {labels['price']}: {{price}} {{currency}}\n"
     else:
-        price_block = ""
+        price_block = f"💰 {labels['price']}: {_localized_no_price_text(user_language)}\n"
 
     if not has_price and market_min and market_max and currency_code:
         market_estimate_line = builder.text(
@@ -111,19 +154,21 @@ def build_preview_prompt(
     else:
         market_estimate_block = ""
 
-    if estimated_loss_range and estimated_loss_value > 0:
+    if not has_price and market_estimate_block:
+        estimate_used_block = f"⚠️ {_localized_estimate_used_note(user_language)}\n"
+    else:
+        estimate_used_block = ""
+
+    if bool(vehicle_data.get("price_inferred")):
+        price_inferred_block = f"⚠️ {_localized_price_inferred_note(user_language)}\n"
+    else:
+        price_inferred_block = ""
+
+    if estimated_loss_range and estimated_loss_value != 0:
         low, high = estimated_loss_range
         estimated_loss_line = builder.text(
-            "preview.loss.negative",
-            default="≈ -{low}–{high}€ potential costs",
-            low=low,
-            high=high,
-        )
-    elif estimated_loss_range and estimated_loss_value < 0:
-        low, high = estimated_loss_range
-        estimated_loss_line = builder.text(
-            "preview.loss.positive",
-            default="≈ +{low}–{high}€ potential benefit",
+            "preview.loss.potential_costs",
+            default="💸 potential post-purchase costs: {low}–{high}€",
             low=low,
             high=high,
         )
@@ -154,8 +199,8 @@ def build_preview_prompt(
         final_steps.append("")
 
     upsell_features = builder.list("preview.upsell_features", default=[])
-    while len(upsell_features) < 4:
-        upsell_features.append("")
+    upsell_features = [str(item).strip() for item in upsell_features if str(item).strip()]
+    upsell_features_block = _join_bullets(upsell_features[:5])
 
     disclaimer_line = builder.text("preview.sections.disclaimer", default="")
     deal_title = builder.text("preview.sections.deal_title", default="")
@@ -223,7 +268,9 @@ Upsell hint:
 
 🚗 {title_line}
 {trim_block}{price_block}
+{price_inferred_block}
 {market_estimate_block}
+{estimate_used_block}
 📉 {labels['mileage']}: {mileage_display}
 {mileage_warning_block}
 📊 {deal_title}:
@@ -252,10 +299,7 @@ Upsell hint:
 {upsell_title}
 
 👉 {full_report_title}:
-• {upsell_features[0]}
-• {upsell_features[1]}
-• {upsell_features[2]}
-• {upsell_features[3]}
+{upsell_features_block}
 
 🔎 {vin_line_1}
 {vin_line_2}

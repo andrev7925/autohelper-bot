@@ -1,5 +1,7 @@
 import re
 
+from ai_core.pipeline.mileage_extractor import select_mileage_from_text
+
 
 def _to_number(value):
     if value is None:
@@ -242,15 +244,120 @@ def _extract_text_mileage_candidates(raw_text: str) -> list[int]:
     return unique_sorted
 
 
+def _clean_title_segment(title: str) -> str:
+    raw = str(title or "").strip()
+    if not raw:
+        return ""
+    primary = re.split(r"\s*[•|]|\s+[—–-]\s+", raw, maxsplit=1)[0]
+    return re.sub(r"\s+", " ", primary).strip(" -–—|•")
+
+
+def _extract_make_model_from_title(title: str, current_make: str) -> tuple[str, str]:
+    segment = _clean_title_segment(title)
+    if not segment:
+        return "", ""
+
+    tokens = [token for token in segment.split() if token]
+    if not tokens:
+        return "", ""
+
+    make = tokens[0]
+    model_tokens = tokens[1:]
+    if current_make and model_tokens and tokens[0].lower() == current_make.strip().lower():
+        make = current_make.strip()
+    elif current_make:
+        make = current_make.strip()
+        model_tokens = tokens
+
+    stop_pattern = re.compile(
+        r"^(?:19\d{2}|20\d{2}|\d+(?:[\.,]\d+)?(?:l|tdi|tsi|dci|hdi|cdi)?|diesel|petrol|gasoline|hybrid|electric|ev|автомат|manual|механіка|панорама|камера|nct|tax)$",
+        re.IGNORECASE,
+    )
+
+    clean_model_tokens = []
+    for token in model_tokens:
+        normalized = token.strip(" ,")
+        if not normalized:
+            continue
+        if stop_pattern.match(normalized):
+            break
+        clean_model_tokens.append(normalized)
+        if len(clean_model_tokens) >= 3:
+            break
+
+    model = " ".join(clean_model_tokens).strip()
+    return make, model
+
+
+def _is_close_value(left: float | int | None, right: float | int | None, *, relative: float = 0.12, absolute: int = 5000) -> bool:
+    if left is None or right is None:
+        return False
+    tolerance = max(absolute, int(max(abs(left), abs(right)) * relative))
+    return abs(float(left) - float(right)) <= tolerance
+
+
+def _to_km(value: float | int | None, unit: str) -> int | None:
+    if value is None:
+        return None
+    unit_value = str(unit or "").strip().lower()
+    if unit_value == "miles":
+        return round(float(value) * 1.60934)
+    return round(float(value))
+
+
+def _resolve_base_mileage(raw_data: dict) -> tuple[float | None, int | None, str]:
+    unit = _extract_mileage_unit(raw_data)
+    generic_mileage = _to_number(raw_data.get("mileage"))
+    explicit_km = _to_number(raw_data.get("mileage_km"))
+    explicit_miles = _to_number(raw_data.get("mileage_miles"))
+
+    if unit == "miles":
+        base_mileage = explicit_miles if explicit_miles is not None else generic_mileage
+        base_km = explicit_km if explicit_km is not None else (round(base_mileage * 1.60934) if base_mileage is not None else None)
+        return base_mileage, base_km, unit
+
+    if unit == "km":
+        base_mileage = explicit_km if explicit_km is not None else generic_mileage
+        base_km = round(base_mileage) if base_mileage is not None else None
+        return base_mileage, base_km, unit
+
+    if explicit_miles is not None and explicit_km is None:
+        return explicit_miles, round(explicit_miles * 1.60934), "miles"
+
+    if explicit_km is not None:
+        return explicit_km, round(explicit_km), "km"
+
+    return generic_mileage, None, unit
+
+
+def _should_prefer_text_mileage(detected_km: int | None, detected_unit: str, text_value: int | None, text_unit: str) -> bool:
+    if text_value is None or text_unit not in {"km", "miles"}:
+        return False
+    if detected_km is None:
+        return True
+    if detected_unit not in {"km", "miles"}:
+        return True
+
+    preferred_km = text_value if text_unit == "km" else round(text_value * 1.60934)
+    alternate_km = round(text_value * 1.60934) if text_unit == "km" else text_value
+
+    # Typical blurry-dashboard failure: OCR captured the digits correctly,
+    # but interpreted the unit incorrectly. In that case the detected km value
+    # is close to the raw text number, not to the converted value.
+    if detected_unit != text_unit and _is_close_value(detected_km, alternate_km) and not _is_close_value(detected_km, preferred_km):
+        return True
+
+    return False
+
+
 def normalize_vehicle_data(raw_data: dict, market_context: dict) -> dict:
     raw_data = raw_data or {}
     market_context = market_context or {}
 
     mileage_original = raw_data.get("mileage")
-    mileage_num = _to_number(mileage_original)
+    document_mileage_num, document_mileage_km, document_unit = _resolve_base_mileage(raw_data)
+    mileage_num, mileage_km, unit = document_mileage_num, document_mileage_km, document_unit
     dashboard_mileage_num = _to_number(raw_data.get("dashboard_mileage"))
-    unit = _extract_mileage_unit(raw_data)
-    mileage_km = None
     data_quality_flag = None
 
     year_value = int(_to_number(raw_data.get("year")) or 0) or None
@@ -268,73 +375,66 @@ def normalize_vehicle_data(raw_data: dict, market_context: dict) -> dict:
         ]
     ).lower()
 
+    text_mileage_selection = select_mileage_from_text(listing_text_blob, year=year_value)
+    text_mileage_candidates = sorted(
+        {
+            int(candidate.get("value"))
+            for candidate in (text_mileage_selection.get("candidates") or [])
+            if not candidate.get("ignored") and candidate.get("value")
+        }
+    )
+    text_mileage_unit = str(text_mileage_selection.get("selected_unit") or "")
+    max_text_mileage = text_mileage_selection.get("selected_value")
+    text_mileage_km = text_mileage_selection.get("selected_km")
+
+    mileage_source = "unknown"
+    if text_mileage_km is not None and max_text_mileage is not None:
+        mileage_source = "listing_text"
+        unit = text_mileage_unit
+        mileage_num = float(max_text_mileage)
+        mileage_km = text_mileage_km
+        data_quality_flag = "used_text_mileage"
+    elif dashboard_mileage_num is not None and dashboard_mileage_num >= 1000:
+        mileage_source = "odometer"
+        unit = "km"
+        mileage_num = float(dashboard_mileage_num)
+        mileage_km = _to_km(mileage_num, unit)
+        data_quality_flag = "used_dashboard_mileage"
+    elif document_mileage_num is not None:
+        mileage_source = "document"
+        unit = document_unit
+        mileage_num = float(document_mileage_num)
+        mileage_km = _to_km(mileage_num, unit)
+
     if mileage_num is None:
         masked_mileage_match = re.search(r"\b(\d{2,3})\s*[xх]{3}\s*(км|km)?\b", raw_text_blob, re.IGNORECASE)
         if masked_mileage_match:
             mileage_num = float(int(masked_mileage_match.group(1)) * 1000)
+            mileage_km = round(mileage_num)
+            unit = "km"
+            mileage_source = "listing_text_masked"
             data_quality_flag = "estimated_masked_mileage"
-            print(f"⚠ ESTIMATED MASKED MILEAGE: {int(mileage_num)}")
+            print(f"WARN: ESTIMATED MASKED MILEAGE: {int(mileage_num)}")
 
-    has_explicit_unit = bool(
-        re.search(r"\b(km|км|mile|miles|mi|миль|мили|миля)\b", str(mileage_original or "").lower())
-        or str(raw_data.get("mileage_unit") or "").strip()
-    )
-    should_fix_suspicious_mileage = bool(
-        mileage_num is not None
-        and mileage_num < 1000
-        and (
-            (year_value is not None and year_value < 2015)
-            or "тис" in raw_text_blob
-            or "тыс" in raw_text_blob
-            or not has_explicit_unit
-        )
-    )
+    if mileage_num is not None and mileage_km is None:
+        mileage_km = _to_km(mileage_num, unit)
 
-    should_use_dashboard_mileage = bool(
-        mileage_num is not None
-        and mileage_num < 1000
-        and dashboard_mileage_num is not None
-        and dashboard_mileage_num >= 1000
-    )
-
-    if should_use_dashboard_mileage:
-        mileage_num = dashboard_mileage_num
-        data_quality_flag = "used_dashboard_mileage"
-        print(f"✅ USED DASHBOARD MILEAGE: {int(round(mileage_num))}")
-
-    if should_fix_suspicious_mileage and not should_use_dashboard_mileage:
-        mileage_num = mileage_num * 1000
-        data_quality_flag = "corrected_mileage"
-        print(f"⚠ FIXED MILEAGE: {int(round(mileage_num))}")
-
-    if mileage_num is not None:
-        mileage_km = round(mileage_num * 1.60934) if unit == "miles" else round(mileage_num)
-
-    text_mileage_candidates = _extract_text_mileage_candidates(listing_text_blob)
-    text_mileage_unit = _extract_text_mileage_unit(listing_text_blob)
     detected_mileage = mileage_km if mileage_km is not None else (round(mileage_num) if mileage_num is not None else None)
-    max_text_mileage = max(text_mileage_candidates) if text_mileage_candidates else None
 
-    if max_text_mileage is not None:
-        text_mileage_km = round(max_text_mileage * 1.60934) if text_mileage_unit == "miles" else max_text_mileage
-    else:
-        text_mileage_km = None
-
-    should_override_with_text_mileage = bool(
-        detected_mileage is not None
-        and text_mileage_km is not None
-        and text_mileage_unit in {"km", "miles"}
-        and text_mileage_km > 50000
-        and text_mileage_km >= detected_mileage * 3
+    print(
+        "DEBUG: MILEAGE SOURCE SELECTED:",
+        {
+            "source": mileage_source,
+            "selected_value": round(mileage_num) if mileage_num is not None else None,
+            "selected_unit": unit,
+            "selected_km": mileage_km,
+            "text_candidate": max_text_mileage,
+            "text_unit": text_mileage_unit,
+            "dashboard_value": round(dashboard_mileage_num) if dashboard_mileage_num is not None else None,
+            "document_value": round(document_mileage_num) if document_mileage_num is not None else None,
+            "document_unit": document_unit,
+        },
     )
-
-    if should_override_with_text_mileage:
-        unit = text_mileage_unit
-        mileage_num = float(max_text_mileage)
-        mileage_km = round(mileage_num * 1.60934) if unit == "miles" else round(mileage_num)
-        detected_mileage = mileage_km
-        data_quality_flag = data_quality_flag or "used_text_mileage"
-        print(f"DEBUG: USED TEXT MILEAGE: {int(round(detected_mileage))}")
 
     mileage_conflict = bool(
         detected_mileage is not None
@@ -359,12 +459,16 @@ def normalize_vehicle_data(raw_data: dict, market_context: dict) -> dict:
         mileage_confidence = "low"
     elif mileage_unit_suspected:
         mileage_confidence = "medium"
+    elif text_mileage_selection.get("fix_applied"):
+        mileage_confidence = "low"
     elif text_mileage_candidates:
         mileage_confidence = "high"
     else:
         mileage_confidence = "medium"
 
-    if mileage_conflict and detected_mileage is not None and text_mileage_km is not None:
+    if text_mileage_selection.get("fix_applied"):
+        mileage_note = text_mileage_selection.get("note") or "interpreted as thousands (likely shorthand)"
+    elif mileage_conflict and detected_mileage is not None and text_mileage_km is not None:
         mileage_note = (
             f"text mileage up to {text_mileage_km:,} differs from detected {int(detected_mileage):,}"
         )
@@ -444,11 +548,11 @@ def normalize_vehicle_data(raw_data: dict, market_context: dict) -> dict:
         import_suspected = bool(import_suspected_flag)
 
     if title and (not make or not model):
-        parts = [p for p in title.split() if p]
-        if parts and not make:
-            make = parts[0]
-        if len(parts) > 1 and not model:
-            model = " ".join(parts[1:])
+        title_make, title_model = _extract_make_model_from_title(title, make)
+        if title_make and not make:
+            make = title_make
+        if title_model and not model:
+            model = title_model
 
     generic_make_tokens = {"продам", "продаю", "sell", "for", "sale"}
     if make.strip().lower() in generic_make_tokens and visual_confidence >= 0.5:
@@ -487,7 +591,7 @@ def normalize_vehicle_data(raw_data: dict, market_context: dict) -> dict:
             model = visual_model
 
     if visual_make or visual_model:
-        print(f"🔍 VISUAL DETECTION: {visual_make} {visual_model}".strip())
+        print(f"DEBUG: VISUAL DETECTION: {visual_make} {visual_model}".strip())
 
     if make:
         raw_data["make"] = make
@@ -509,6 +613,8 @@ def normalize_vehicle_data(raw_data: dict, market_context: dict) -> dict:
         "currency": currency,
         "mileage": round(mileage_num) if mileage_num is not None else None,
         "mileage_original": mileage_original,
+        "mileage_unit": unit,
+        "mileage_miles": round(mileage_num) if mileage_num is not None and unit == "miles" else None,
         "dashboard_mileage": round(dashboard_mileage_num) if dashboard_mileage_num is not None else None,
         "mileage_km": mileage_km,
         "fuel_type": str(raw_data.get("fuel_type") or "").strip().lower(),
@@ -522,6 +628,7 @@ def normalize_vehicle_data(raw_data: dict, market_context: dict) -> dict:
         "mileage_confidence": mileage_confidence,
         "mileage_note": mileage_note,
         "mileage_unit_suspected": mileage_unit_suspected,
+        "mileage_source": mileage_source,
         "country": str(raw_data.get("country") or market_context.get("country") or "").strip(),
         "plate_number": plate_number,
         "plate_confidence": plate_confidence,
@@ -533,4 +640,6 @@ def normalize_vehicle_data(raw_data: dict, market_context: dict) -> dict:
     if data_quality_flag:
         normalized["data_quality_flag"] = data_quality_flag
     normalized["data_quality_score"] = _quality_score(normalized)
+    if not normalized.get("year") and normalized["data_quality_score"] == "high":
+        normalized["data_quality_score"] = "medium"
     return normalized

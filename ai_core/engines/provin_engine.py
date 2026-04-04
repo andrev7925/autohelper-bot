@@ -1,5 +1,6 @@
 from services.test_openai import gpt_full_analysis_4o
 from ai_core.prompts.provin_prompt import build_provin_injection_block
+from ai_core.pipeline.structured_pipeline import analyze_car, generate_response
 from price_estimator import enrich_with_price_estimate
 
 
@@ -17,5 +18,14 @@ async def run_provin_engine(input_data: dict, normalized_data: dict, market_cont
 
     existing_text = payload.get("text") or ""
     payload["text"] = f"{existing_text}\n\n{build_provin_injection_block(market_context, enriched_data)}"
+    try:
+        norm_country = payload.get("country") or "Ireland"
+        context = {"language": language, "country": norm_country}
+        analysis = analyze_car(payload, context=context)
+        response = generate_response(analysis, payload, context=context)
+        if isinstance(response, str) and response.strip():
+            return response
+    except Exception as err:
+        print(f"WARN: structured provin engine failed, fallback to legacy GPT: {err}")
 
     return await gpt_full_analysis_4o(payload, payload.get("country") or "Ireland", language, summary_only=False)

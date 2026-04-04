@@ -18,8 +18,10 @@ from keyboards.compare_cars import get_compare_keyboard
 from states import AnalyzeAdStates, MainMenuStates, CalcExpensesStates, CompareCarsStates
 from services.extractors import extract_ad_data
 from ai_core.pipeline.pipeline import run_analysis_pipeline
+from ai_core.pipeline.mileage_extractor import select_mileage_from_text
 from ai_core.context.market_loader import get_context as get_market_context
 from feature_flags import USE_NEW_PIPELINE
+from price_estimator import enrich_with_price_estimate
 import asyncio
 import json
 from collections import defaultdict
@@ -461,6 +463,76 @@ def _soft_validate_before_gpt(data: dict, raw_data=None, stage: str = "unknown")
     )
 
 
+def _to_float_or_none(value):
+    if value in (None, ""):
+        return None
+    try:
+        return float(str(value).replace(",", "").strip())
+    except Exception:
+        return None
+
+
+def _has_minimum_analysis_data(car_data: dict) -> bool:
+    data = car_data if isinstance(car_data, dict) else {}
+
+    make = str(data.get("make") or data.get("brand") or "").strip()
+    model = str(data.get("model") or "").strip()
+    if (not make or not model) and str(data.get("brand_model") or "").strip():
+        tokens = [token for token in str(data.get("brand_model") or "").split() if token]
+        if tokens:
+            make = make or tokens[0]
+        if len(tokens) > 1:
+            model = model or " ".join(tokens[1:])
+
+    return bool(make and model)
+
+
+def _prepare_partial_data_mode(car_data: dict, partial_mode: bool = False) -> tuple[dict, bool]:
+    prepared = dict(car_data or {})
+
+    mileage_km = _to_float_or_none(prepared.get("mileage_km"))
+    mileage = _to_float_or_none(prepared.get("mileage"))
+    mileage_unit = str(prepared.get("mileage_unit") or "").strip().lower()
+
+    if mileage_km is None and mileage is not None and mileage_unit == "miles":
+        prepared["mileage_km"] = int(round(mileage * 1.60934))
+
+    if not prepared.get("year"):
+        prepared["year"] = None
+
+    plate_value = str(prepared.get("plate_number") or prepared.get("license_plate") or "").strip()
+    year_value = prepared.get("year")
+    mileage_km_value = prepared.get("mileage_km")
+    missing_count = sum(
+        1 for item in (year_value, mileage_km_value, plate_value if plate_value else None) if item in (None, "")
+    )
+
+    if missing_count >= 2:
+        data_confidence = "low"
+    elif missing_count == 1:
+        data_confidence = "medium"
+    else:
+        data_confidence = "high"
+
+    if missing_count > 0:
+        partial_mode = True
+
+    prepared["data_confidence"] = data_confidence
+    prepared["data_confidence_level"] = data_confidence
+    prepared["partial_mode"] = partial_mode
+
+    print(
+        {
+            "year": prepared.get("year"),
+            "mileage_km": prepared.get("mileage_km"),
+            "mileage": prepared.get("mileage"),
+            "partial_mode": partial_mode,
+        }
+    )
+
+    return prepared, partial_mode
+
+
 def _first_url_in_text(text: str) -> str:
     if not isinstance(text, str):
         return ""
@@ -473,6 +545,194 @@ def _first_url_in_text(text: str) -> str:
 def _to_clean_int_text(value: str) -> str:
     cleaned = re.sub(r"[^\d]", "", value or "")
     return cleaned
+
+
+def _extract_numeric_candidates(text: str) -> list[dict]:
+    if not text:
+        return []
+
+    current_year = time.localtime().tm_year
+    tagged = []
+    seen = set()
+
+    pattern = r"\b\d{1,2}[\-/\.]\d{2,4}\b|\b\d{1,3}(?:[\s\u00a0\u202f.,]\d{3})+\b|\b\d{3,6}\b"
+    text_str = str(text)
+    for match in re.finditer(pattern, text_str):
+        raw = match.group(0)
+        digits = re.sub(r"\D", "", raw)
+        if not digits:
+            continue
+
+        try:
+            value = int(digits)
+        except Exception:
+            continue
+
+        if value < 300 or value > 5_000_000:
+            continue
+
+        if value in seen:
+            continue
+        seen.add(value)
+
+        near_start = max(0, match.start() - 8)
+        near_end = min(len(text_str), match.end() + 8)
+        near_context = text_str[near_start:near_end].lower()
+        line_start, line_end = _line_bounds(text_str, match.start(), match.end())
+        line_context = text_str[line_start:line_end].lower()
+        raw_lower = raw.lower()
+
+        mileage_tokens = {"km", "км", "mileage", "пробег", "пробіг", "mile", "miles", "mi", "odometer"}
+        date_tokens = {"nct", "mot", "tuv", "tüv", "itv", "inspection", "expiry", "exp", "reg", "registration"}
+
+        has_date_shape = bool(re.search(r"\d{1,2}[\-/\.]\d{2,4}", raw_lower))
+
+        if has_date_shape or any(token in line_context for token in date_tokens):
+            tag = "date"
+        elif any(token in near_context for token in mileage_tokens):
+            tag = "mileage"
+        elif 1900 <= value <= current_year + 1:
+            tag = "year"
+        else:
+            tag = "unknown"
+
+        tagged.append({"value": value, "tag": tag, "raw": raw, "context": line_context})
+
+    return tagged
+
+
+def _estimate_market_price_for_validation(payload: dict) -> tuple[int | None, str]:
+    car = dict(payload or {})
+    make = str(car.get("make") or car.get("brand") or "").strip()
+    model = str(car.get("model") or "").strip()
+    if (not make or not model) and str(car.get("brand_model") or "").strip():
+        tokens = [t for t in str(car.get("brand_model") or "").split() if t]
+        if tokens:
+            make = make or tokens[0]
+        if len(tokens) > 1:
+            model = model or " ".join(tokens[1:])
+
+    if not make or not model:
+        return None, "low"
+
+    estimate_payload = dict(car)
+    estimate_payload["make"] = make
+    estimate_payload["model"] = model
+
+    try:
+        estimated = enrich_with_price_estimate(estimate_payload)
+    except Exception as err:
+        print(f"WARN: market estimate failed for price validation: {err}")
+        return None, "low"
+
+    price_val = _to_int_or_none(estimated.get("estimated_market_price"))
+    confidence = str(estimated.get("price_estimation_confidence") or "low").strip().lower()
+    if price_val is None or price_val <= 0:
+        return None, confidence or "low"
+    return int(price_val), confidence or "low"
+
+
+def _infer_price_from_context_with_market(result: dict, raw_text: str) -> tuple[int | None, str | None]:
+    tagged_numbers = _extract_numeric_candidates(raw_text)
+    if not tagged_numbers:
+        return None, None
+
+    candidates = [item["value"] for item in tagged_numbers if item.get("tag") == "unknown"]
+    if not candidates:
+        return None, None
+
+    known_year = _to_int_or_none(result.get("year"))
+    known_mileage = _to_int_or_none(result.get("mileage"))
+    known_mileage_km = _to_int_or_none(result.get("mileage_km"))
+    known_mileage_miles = _to_int_or_none(result.get("mileage_miles"))
+
+    filtered = []
+    for candidate in candidates:
+        if known_year and candidate == known_year:
+            continue
+        if 1980 <= candidate <= 2035:
+            continue
+        if known_mileage and candidate == known_mileage:
+            continue
+        if known_mileage_km and candidate == known_mileage_km:
+            continue
+        if known_mileage_miles and candidate == known_mileage_miles:
+            continue
+        filtered.append(candidate)
+
+    if not filtered:
+        return None, None
+
+    estimated_price, estimate_confidence = _estimate_market_price_for_validation(result)
+    if estimated_price:
+        low_confidence = estimate_confidence == "low"
+        strict_low, strict_high = (0.3, 2.0) if low_confidence else (0.5, 1.5)
+        soft_low, soft_high = (0.3, 2.0)
+        threshold = 1 if low_confidence else 2
+
+        scores = []
+        for candidate in filtered:
+            ratio = candidate / float(estimated_price)
+            score = 0
+
+            if strict_low <= ratio <= strict_high:
+                score += 2
+            elif soft_low <= ratio <= soft_high:
+                score += 1
+
+            if 500 <= candidate <= 50_000:
+                score += 1
+
+            if candidate > 100_000:
+                score -= 2
+
+            is_outlier = ratio < 0.2 or ratio > 2.5
+            scores.append(
+                {
+                    "candidate": candidate,
+                    "estimated_price": estimated_price,
+                    "ratio": round(ratio, 4),
+                    "score": score,
+                    "outlier": is_outlier,
+                }
+            )
+
+        if scores:
+            best = max(scores, key=lambda item: (item["score"], -abs(item["ratio"] - 1.0), -item["candidate"]))
+            print(
+                {
+                    "tagged_numbers": [{"value": x.get("value"), "tag": x.get("tag")} for x in tagged_numbers],
+                    "candidates": filtered,
+                    "scores": scores,
+                    "selected": best.get("candidate"),
+                    "estimated_price": estimated_price,
+                    "confidence": estimate_confidence,
+                }
+            )
+
+            if best["score"] >= threshold and not best["outlier"]:
+                source = "multi_number_market_validated" if len(tagged_numbers) > 1 else "market_validated"
+                return int(best["candidate"]), source
+
+    # Fallback only when estimator is unavailable.
+    if not estimated_price:
+        fallback_candidates = [value for value in filtered if 500 <= value <= 50_000]
+        if fallback_candidates:
+            fallback_candidates.sort()
+            candidate = fallback_candidates[0]
+            print(
+                {
+                    "tagged_numbers": [{"value": x.get("value"), "tag": x.get("tag")} for x in tagged_numbers],
+                    "candidates": filtered,
+                    "selected": candidate,
+                    "estimated_price": estimated_price,
+                    "accepted": True,
+                    "source": "heuristic_fallback",
+                }
+            )
+            return int(candidate), "heuristic_fallback"
+
+    return None, None
 
 
 def _line_bounds(text: str, start: int, end: int) -> tuple[int, int]:
@@ -506,6 +766,103 @@ def _normalize_mileage_unit(raw_unit: str) -> str:
     if unit in km_tokens:
         return "km"
     return ""
+
+
+def _to_int_or_none(value) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        digits = re.sub(r"\D", "", str(value))
+        if not digits:
+            return None
+        return int(digits)
+    except Exception:
+        return None
+
+
+def _prefer_incoming_mileage(existing: dict, incoming: dict) -> bool:
+    incoming_unit = _normalize_mileage_unit(incoming.get("mileage_unit") or "")
+    existing_unit = _normalize_mileage_unit(existing.get("mileage_unit") or "")
+
+    incoming_mileage = _to_int_or_none(incoming.get("mileage"))
+    incoming_km = _to_int_or_none(incoming.get("mileage_km"))
+    incoming_miles = _to_int_or_none(incoming.get("mileage_miles"))
+
+    if incoming_unit not in {"km", "miles"}:
+        return False
+    if incoming_mileage is None and incoming_km is None and incoming_miles is None:
+        return False
+
+    existing_mileage = _to_int_or_none(existing.get("mileage"))
+    if existing_mileage is None:
+        return True
+
+    if existing_unit not in {"km", "miles"}:
+        return True
+
+    # Text with an explicit unit is more reliable than a blurry photo OCR guess.
+    if incoming_unit != existing_unit:
+        return True
+
+    return False
+
+
+def _apply_incoming_mileage(existing: dict, incoming: dict) -> None:
+    incoming_unit = _normalize_mileage_unit(incoming.get("mileage_unit") or "")
+    incoming_mileage = _to_int_or_none(incoming.get("mileage"))
+    incoming_km = _to_int_or_none(incoming.get("mileage_km"))
+    incoming_miles = _to_int_or_none(incoming.get("mileage_miles"))
+
+    if incoming_unit == "miles":
+        if incoming_miles is None:
+            incoming_miles = incoming_mileage
+        if incoming_mileage is None:
+            incoming_mileage = incoming_miles
+        if incoming_km is None and incoming_miles is not None:
+            incoming_km = int(round(incoming_miles * 1.60934))
+    elif incoming_unit == "km":
+        if incoming_km is None:
+            incoming_km = incoming_mileage
+        if incoming_mileage is None:
+            incoming_mileage = incoming_km
+
+    if incoming_unit:
+        existing["mileage_unit"] = incoming_unit
+    if incoming_mileage is not None:
+        existing["mileage"] = incoming_mileage
+    if incoming_km is not None:
+        existing["mileage_km"] = incoming_km
+    if incoming_miles is not None:
+        existing["mileage_miles"] = incoming_miles
+
+
+def _resolve_critical_field_conflicts(result: dict, extra: dict) -> None:
+    if _prefer_incoming_mileage(result, extra):
+        _apply_incoming_mileage(result, extra)
+    else:
+        if result.get("mileage_km") in (None, "") and extra.get("mileage_km") not in (None, ""):
+            result["mileage_km"] = extra.get("mileage_km")
+        if result.get("mileage_miles") in (None, "") and extra.get("mileage_miles") not in (None, ""):
+            result["mileage_miles"] = extra.get("mileage_miles")
+
+    incoming_price = extra.get("price")
+    incoming_currency = extra.get("currency")
+    if incoming_price not in (None, ""):
+        if result.get("price") in (None, "") or result.get("source") in {"preview_batch", "vision_batch"}:
+            result["price"] = incoming_price
+    if incoming_currency not in (None, ""):
+        if result.get("currency") in (None, "") or result.get("source") in {"preview_batch", "vision_batch"}:
+            result["currency"] = incoming_currency
+
+    incoming_year = extra.get("year")
+    if incoming_year not in (None, ""):
+        has_plate = bool((result.get("plate_number") or result.get("license_plate") or "").strip())
+        if result.get("year") in (None, ""):
+            result["year"] = incoming_year
+            result["year_source"] = "text"
+        elif str(result.get("year_source") or "").strip().lower() == "plate_inferred" and not has_plate:
+            result["year"] = incoming_year
+            result["year_source"] = "text"
 
 
 def _parse_listing_text_fallback(text: str) -> dict:
@@ -590,41 +947,25 @@ def _parse_listing_text_fallback(text: str) -> dict:
         elif any(token in lowered for token in ["грн", "uah"]):
             data["currency"] = "UAH"
 
-    mileage_labels = (
-        r"mileage|kilométrage|kilometrage|laufleistung|kilometerstand|пробіг|пробег|"
-        r"kilometraje|quilometragem|quilometragem|km\s*stand|odometer|mesafe|"
-        r"kilometre|kilometres|kilomètre|kilomètres"
-    )
-    mileage_value = r"\d{1,3}(?:[\s.,\u00a0\u202f]?\d{3})+|\d{2,3}(?:[\.,]\d)?\s*(?:k|к|тис\.?|тыс\.?|mil|mille|bin)"
-    mileage_unit = (
-        r"km|kms|км|kilometers?|kilometres?|kilom[eé]tres?|kilometros?|kil[oó]metros?|"
-        r"quilometros?|quil[oô]metros?|mile|miles|mi|миля|мили|миль|милях|meilen|millas|milhas"
-    )
-    mileage_patterns = [
-        rf"(?:{mileage_labels})\s*[:\-]?\s*({mileage_value})\s*({mileage_unit})?",
-        rf"({mileage_value})\s*({mileage_unit})",
-    ]
-    for pattern in mileage_patterns:
-        mileage_match = re.search(pattern, raw_text, flags=re.I)
-        if mileage_match:
-            mileage_raw = (mileage_match.group(1) or "").lower().replace(" ", "")
-            multiplier = _mileage_multiplier(mileage_raw)
-            mileage_number = _to_clean_int_text(mileage_raw)
-            if mileage_number:
-                try:
-                    mileage_value = int(mileage_number) * multiplier
-                    unit = _normalize_mileage_unit(mileage_match.group(2) or "")
-                    if unit == "miles":
-                        data["mileage_miles"] = str(mileage_value)
-                        # Для подальшого аналізу зручно мати пробіг у кілометрах
-                        data["mileage"] = str(int(mileage_value * 1.60934))
-                        data["mileage_unit"] = "miles"
-                    else:
-                        data["mileage"] = str(mileage_value)
-                        data["mileage_unit"] = "km"
-                except Exception:
-                    pass
-            break
+    mileage_selection = select_mileage_from_text(raw_text, year=_to_int_or_none(data.get("year")))
+    selected_unit = str(mileage_selection.get("selected_unit") or "")
+    selected_value = _to_int_or_none(mileage_selection.get("selected_value"))
+    selected_km = _to_int_or_none(mileage_selection.get("selected_km"))
+    selected_miles = _to_int_or_none(mileage_selection.get("selected_miles"))
+    if selected_unit == "miles" and selected_value is not None and selected_km is not None:
+        data["mileage_miles"] = str(selected_value)
+        data["mileage_km"] = str(selected_km)
+        data["mileage"] = str(selected_value)
+        data["mileage_unit"] = "miles"
+    elif selected_unit == "km" and selected_value is not None and selected_km is not None:
+        data["mileage"] = str(selected_value)
+        data["mileage_km"] = str(selected_km)
+        data["mileage_unit"] = "km"
+
+    if mileage_selection.get("confidence"):
+        data["mileage_confidence"] = mileage_selection.get("confidence")
+    if mileage_selection.get("note"):
+        data["mileage_note"] = mileage_selection.get("note")
 
     lowered = raw_text.lower()
     if any(token in lowered for token in ["diesel", "дизель", "дизельний"]):
@@ -643,6 +984,8 @@ def _merge_site_data(base_data: dict, extra_data: dict) -> dict:
     result = dict(base_data or {})
     extra = extra_data or {}
 
+    _resolve_critical_field_conflicts(result, extra)
+
     for key, value in extra.items():
         if value in (None, "", [], {}):
             continue
@@ -654,9 +997,23 @@ def _merge_site_data(base_data: dict, extra_data: dict) -> dict:
                 result["text"] = f"{existing_text}\n\n{incoming_text}".strip() if existing_text else incoming_text
             continue
 
+        if key in {"mileage", "mileage_km", "mileage_miles", "mileage_unit", "price", "currency", "year", "year_source"}:
+            continue
+
         existing_value = result.get(key)
         if existing_value in (None, "", [], {}):
             result[key] = value
+
+    # Priority: explicit/structured price first. Context inference only if price is still missing.
+    if result.get("price") in (None, ""):
+        context_text = str(extra.get("text") or result.get("text") or "").strip()
+        inferred_price, inferred_source = _infer_price_from_context_with_market(result, context_text)
+        if inferred_price is not None:
+            result["price"] = inferred_price
+            result["price_source"] = inferred_source
+            result["price_inferred"] = True
+            if result.get("currency") in (None, ""):
+                result["currency"] = "EUR"
 
     return result
 
@@ -927,24 +1284,15 @@ async def process_ad_message(message: types.Message, state: FSMContext):
             await progress_task
             return
 
-        if USE_NEW_PIPELINE:
-            try:
-                _soft_validate_before_gpt(site_data, raw_data=site_data, stage="link_preview_pipeline")
-                result_text = await run_analysis_pipeline(site_data, country, mode="preview", language=lang)
-            except Exception as pipeline_err:
-                print(f"WARN: new preview pipeline failed | mode=link | err={pipeline_err}")
-                if PREVIEW_LEGACY_FALLBACK_ENABLED:
-                    print("WARN: preview legacy fallback enabled | mode=link")
-                    _soft_validate_before_gpt(site_data, raw_data=site_data, stage="link_preview_legacy_fallback")
-                    result_text = await gpt_full_analysis_4o(site_data, country, lang, summary_only=True)
-                else:
-                    print("WARN: preview legacy fallback disabled | mode=link")
-                    result_text = PREVIEW_TEMP_UNAVAILABLE_TEXT.get(lang, PREVIEW_TEMP_UNAVAILABLE_TEXT["uk"])
-        else:
-            _soft_validate_before_gpt(site_data, raw_data=site_data, stage="link_preview_legacy")
+        try:
+            _soft_validate_before_gpt(site_data, raw_data=site_data, stage="link_preview_pipeline")
+            result_text = await run_analysis_pipeline(site_data, country, mode="preview", language=lang)
+        except Exception as pipeline_err:
+            print(f"WARN: structured preview pipeline failed | mode=link | err={pipeline_err}")
+            _soft_validate_before_gpt(site_data, raw_data=site_data, stage="link_preview_legacy_fallback")
             result_text = await gpt_full_analysis_4o(site_data, country, lang, summary_only=True)
         print(
-            "DEBUG: gpt_full_analysis_4o returned(link) | "
+            "DEBUG: analysis result returned(link) | "
             f"type={type(result_text)} | len={len(result_text) if isinstance(result_text, str) else 0} | "
             f"preview={(result_text[:180] if isinstance(result_text, str) else result_text)}"
         )
@@ -1119,16 +1467,12 @@ async def show_full_ai_report_callback(callback: types.CallbackQuery, state: FSM
                 summary_for_expand = current_car.get("analyze_text") or ""
 
             print("DEBUG: show_full_ai_report_callback | primary heavy full generation...")
-            if USE_NEW_PIPELINE:
-                try:
-                    _soft_validate_before_gpt(site_data, raw_data=data.get("current_car"), stage="full_report_pipeline")
-                    full_report = await run_analysis_pipeline(site_data, country, mode="pro", language=input_lang)
-                except Exception as pipeline_err:
-                    print(f"WARN: new pro pipeline failed, fallback to old flow: {pipeline_err}")
-                    _soft_validate_before_gpt(site_data, raw_data=data.get("current_car"), stage="full_report_legacy_fallback")
-                    full_report = await gpt_full_analysis_4o(site_data, country, input_lang, summary_only=False)
-            else:
-                _soft_validate_before_gpt(site_data, raw_data=data.get("current_car"), stage="full_report_legacy")
+            try:
+                _soft_validate_before_gpt(site_data, raw_data=data.get("current_car"), stage="full_report_pipeline")
+                full_report = await run_analysis_pipeline(site_data, country, mode="pro", language=input_lang)
+            except Exception as pipeline_err:
+                print(f"WARN: structured pro pipeline failed, fallback to old flow: {pipeline_err}")
+                _soft_validate_before_gpt(site_data, raw_data=data.get("current_car"), stage="full_report_legacy_fallback")
                 full_report = await gpt_full_analysis_4o(site_data, country, input_lang, summary_only=False)
 
             if (not full_report or not isinstance(full_report, str)
@@ -1275,6 +1619,7 @@ async def analyze_and_reply(message, images, state, listing_text: str = ""):
     
     stop_event = asyncio.Event()
     progress_task = asyncio.create_task(cycle_progress_messages(msg, steps, stop_event, interval_seconds=3.0))
+    partial_mode = False
 
     try:
         market_context = get_market_context(country)
@@ -1288,24 +1633,21 @@ async def analyze_and_reply(message, images, state, listing_text: str = ""):
             "DEBUG: analyze_ad_from_images result | "
             f"type={type(site_datas)} | count={len(site_datas) if isinstance(site_datas, list) else 'n/a'}"
         )
-        if not site_datas or not any(
-            d.get("brand_model") or d.get("mileage_km") or d.get("year") or d.get("price")
+        if not site_datas:
+            print("WARN: OCR failed — continuing without image data")
+            site_datas = [{}]
+            partial_mode = True
+
+        if not any(
+            isinstance(d, dict) and (d.get("brand_model") or d.get("mileage_km") or d.get("year") or d.get("price"))
             for d in site_datas
         ):
-            print("DEBUG: analyze_and_reply fallback branch | insufficient parsed fields")
-            stop_event.set()
-            await progress_task
-            text = extract_text_from_images(images, lang)
-            await message.answer(
-                "⚠️ Не вдалося розпізнати основні дані з оголошення. Ось що вдалося витягти з фото:\n\n"
-                + text
-                + "\n\nСпробуйте надіслати текст оголошення окремо."
-            )
-            return
+            print("⚠️ Partial data mode activated")
+            partial_mode = True
 
         # --- Зберігаємо перше авто у FSMContext ---
         if site_datas and len(site_datas) > 0:
-            car_data = site_datas[0]
+            car_data = site_datas[0] if isinstance(site_datas[0], dict) else {}
             repost_text = (listing_text or message.caption or message.text or "").strip()
             if repost_text:
                 text_data = await _extract_site_data_from_message_text(repost_text)
@@ -1315,6 +1657,20 @@ async def analyze_and_reply(message, images, state, listing_text: str = ""):
                         f"text_keys={list(text_data.keys())} | photo_keys={list(car_data.keys()) if isinstance(car_data, dict) else 'n/a'}"
                     )
                     car_data = _merge_site_data(car_data if isinstance(car_data, dict) else {}, text_data)
+
+            if not car_data.get("text"):
+                extracted_text = extract_text_from_images(images, lang)
+                if extracted_text:
+                    car_data["text"] = extracted_text
+
+            car_data, partial_mode = _prepare_partial_data_mode(car_data, partial_mode=partial_mode)
+
+            if not _has_minimum_analysis_data(car_data):
+                stop_event.set()
+                await progress_task
+                await message.answer("critical_error_no_data")
+                return
+
             await state.update_data(current_car=car_data)
         else:
             stop_event.set()
@@ -1336,24 +1692,15 @@ async def analyze_and_reply(message, images, state, listing_text: str = ""):
             await progress_task
             return
 
-        if USE_NEW_PIPELINE:
-            try:
-                _soft_validate_before_gpt(car_data, raw_data=site_datas[0] if site_datas else None, stage="photo_preview_pipeline")
-                result_text = await run_analysis_pipeline(car_data, country, mode="preview", language=lang)
-            except Exception as pipeline_err:
-                print(f"WARN: new preview pipeline failed | mode=photo | err={pipeline_err}")
-                if PREVIEW_LEGACY_FALLBACK_ENABLED:
-                    print("WARN: preview legacy fallback enabled | mode=photo")
-                    _soft_validate_before_gpt(car_data, raw_data=site_datas[0] if site_datas else None, stage="photo_preview_legacy_fallback")
-                    result_text = await gpt_full_analysis_4o(car_data, country, lang, summary_only=True)
-                else:
-                    print("WARN: preview legacy fallback disabled | mode=photo")
-                    result_text = PREVIEW_TEMP_UNAVAILABLE_TEXT.get(lang, PREVIEW_TEMP_UNAVAILABLE_TEXT["uk"])
-        else:
-            _soft_validate_before_gpt(car_data, raw_data=site_datas[0] if site_datas else None, stage="photo_preview_legacy")
+        try:
+            _soft_validate_before_gpt(car_data, raw_data=site_datas[0] if site_datas else None, stage="photo_preview_pipeline")
+            result_text = await run_analysis_pipeline(car_data, country, mode="preview", language=lang)
+        except Exception as pipeline_err:
+            print(f"WARN: structured preview pipeline failed | mode=photo | err={pipeline_err}")
+            _soft_validate_before_gpt(car_data, raw_data=site_datas[0] if site_datas else None, stage="photo_preview_legacy_fallback")
             result_text = await gpt_full_analysis_4o(car_data, country, lang, summary_only=True)
         print(
-            "DEBUG: gpt_full_analysis_4o returned(photo) | "
+            "DEBUG: analysis result returned(photo) | "
             f"type={type(result_text)} | len={len(result_text) if isinstance(result_text, str) else 0} | "
             f"preview={(result_text[:180] if isinstance(result_text, str) else result_text)}"
         )
@@ -1372,6 +1719,18 @@ async def analyze_and_reply(message, images, state, listing_text: str = ""):
             await msg.edit_text(ERROR_OCCURRED.get(lang, ERROR_OCCURRED["uk"]))
             await send_long_message(message, result_text or "⚠️ GPT не повернув текст аналізу. Спробуйте ще раз.")
             return
+
+        if partial_mode:
+            approx_note = {
+                "uk": "👉 оцінка приблизна — недостатньо даних",
+                "ru": "👉 оценка приблизительная — недостаточно данных",
+                "en": "👉 estimate is approximate — insufficient data",
+                "es": "👉 la оценка es aproximada — faltan datos",
+                "pt": "👉 estimativa aproximada — dados insuficientes",
+                "tr": "👉 değerlendirme yaklaşık — veri yetersiz",
+            }.get(lang, "👉 estimate is approximate — insufficient data")
+            result_text = f"{approx_note}\n\n{result_text}"
+
         print("DEBUG: GPT-5 повернув результат!")
 
         current = await state.get_data()

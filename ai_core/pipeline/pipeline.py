@@ -3,7 +3,9 @@ from ai_core.engines.preview_engine import run_preview_engine
 from ai_core.engines.pro_engine import run_pro_engine
 from ai_core.engines.provin_engine import run_provin_engine
 from ai_core.pipeline.normalizer import normalize_vehicle_data
+from ai_core.pipeline.structured_pipeline import run_structured_preview_pipeline
 from price_estimator import enrich_with_price_estimate
+import os
 
 
 def _soft_validate_pipeline_data(raw_data: dict, final_data: dict, mode: str):
@@ -31,13 +33,50 @@ def _soft_validate_pipeline_data(raw_data: dict, final_data: dict, mode: str):
 
 
 async def run_analysis_pipeline(input_data: dict, country: str, mode: str, language: str = "uk") -> str:
+    print(f"[LANG] user_lang={language}")
     market_context = get_context(country)
     normalized_data = normalize_vehicle_data(input_data or {}, market_context)
     normalized_data = enrich_with_price_estimate(normalized_data)
     _soft_validate_pipeline_data(input_data or {}, normalized_data, mode or "preview")
 
     selected_mode = (mode or "preview").strip().lower()
+    if selected_mode == "structured_preview":
+        print("structured_mode")
+        structured_input = dict(input_data or {})
+        structured_input.update({
+            key: value
+            for key, value in (normalized_data or {}).items()
+            if value not in (None, "", [], {})
+        })
+        structured_text = await run_structured_preview_pipeline(
+            input_data=structured_input,
+            language=language,
+            country=country,
+        )
+        if structured_text:
+            return structured_text
+        # Keep safe fallback so existing functionality is never blocked.
+        print("fallback_mode")
+        return await run_preview_engine(normalized_data=normalized_data, market_context=market_context, language=language)
+
     if selected_mode == "preview":
+        use_structured_in_preview = os.getenv("AI_USE_STRUCTURED_PREVIEW", "1").strip().lower() in {"1", "true", "yes", "on"}
+        if use_structured_in_preview:
+            print("structured_mode")
+            structured_input = dict(input_data or {})
+            structured_input.update({
+                key: value
+                for key, value in (normalized_data or {}).items()
+                if value not in (None, "", [], {})
+            })
+            structured_text = await run_structured_preview_pipeline(
+                input_data=structured_input,
+                language=language,
+                country=country,
+            )
+            if structured_text:
+                return structured_text
+            print("fallback_mode")
         return await run_preview_engine(normalized_data=normalized_data, market_context=market_context, language=language)
     if selected_mode == "pro":
         return await run_pro_engine(

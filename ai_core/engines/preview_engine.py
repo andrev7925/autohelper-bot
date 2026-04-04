@@ -1,5 +1,6 @@
 import hashlib
 import random
+import warnings
 
 import openai
 
@@ -230,51 +231,67 @@ def _build_plain_human_explanation(
     vehicle_data: dict | None = None,
     missing_core_data: bool = False,
 ) -> str:
-    score = float(score_value or 0.0)
-    risk_count = len(risks or [])
-
     risk_level_norm = _normalize_risk_level(risk_level)
     price_vs_market_norm = _normalize_price_vs_market(price_vs_market)
-    flags = {str(item).strip().lower() for item in (mileage_flags or []) if str(item).strip()}
-
-    has_major_mileage_signal = bool(flags & {"conflict", "suspicious", "very_high", "rollback", "tampered"})
-    has_medium_mileage_signal = bool(flags & {"high", "above_norm", "possible_mismatch"})
-    has_clean_mileage_signal = bool(flags & {"normal", "ok", "within_norm"})
-
-    major_risk = risk_level_norm == "high" or risk_count >= 4 or has_major_mileage_signal
-    medium_risk = risk_level_norm == "medium" or risk_count >= 2 or has_medium_mileage_signal
-    no_major_risks = not major_risk and risk_level_norm != "high" and risk_count <= 1 and not has_medium_mileage_signal
-    neutral_due_to_data_gap = missing_core_data and risk_count == 0 and not has_major_mileage_signal and risk_level_norm in {"unknown", "low"}
-
-    if neutral_due_to_data_gap:
-        insight_type = "data_gap_neutral"
-    elif score >= 8.0:
-        insight_type = "high"
-    elif score >= 6.0:
-        insight_type = "mid_clean" if no_major_risks else "mid_risky"
-    elif score >= 4.0:
-        insight_type = "low"
-    else:
-        insight_type = "very_low"
-
     if missing_core_data:
-        detail_type = "missing_core_data"
-    elif price_vs_market_norm == "overpriced":
-        detail_type = "overpriced"
-    elif price_vs_market_norm == "underpriced" and not major_risk:
-        detail_type = "underpriced_no_major_risk"
-    elif has_major_mileage_signal:
-        detail_type = "major_mileage_signal"
-    elif medium_risk:
-        detail_type = "medium_risk"
-    elif has_clean_mileage_signal:
-        detail_type = "clean_mileage"
-    else:
-        detail_type = "balanced"
+        return builder.text(
+            "preview.insight.rule.missing_core_data",
+            default="Даних замало для точної оцінки, тому висновок попередній.",
+        )
 
-    first_sentence = builder.choice(f"preview.insight.first.{insight_type}", bucket=f"insight_first_{insight_type}")
-    second_sentence = builder.choice(f"preview.insight.second.{detail_type}", bucket=f"insight_second_{detail_type}")
-    return f"{first_sentence} {second_sentence}".strip()
+    if price_vs_market_norm == "fair" and risk_level_norm == "high":
+        return builder.text(
+            "preview.insight.rule.fair_price_high_risk",
+            default="Ціна нормальна, але пробіг дуже великий — майже точно доведеться вкладати гроші після покупки.",
+        )
+
+    if price_vs_market_norm == "underpriced" and risk_level_norm == "high":
+        return builder.text(
+            "preview.insight.rule.underpriced_high_risk",
+            default="Ціна виглядає привабливо, але високі ризики можуть звести вигоду нанівець.",
+        )
+
+    if price_vs_market_norm == "overpriced":
+        return builder.text(
+            "preview.insight.rule.overpriced",
+            default="Ціна вище ринку, тому варто торгуватися або шукати сильніші аргументи продавця.",
+        )
+
+    if risk_level_norm == "high":
+        return builder.text(
+            "preview.insight.rule.high_risk",
+            default="Ризик після покупки високий, тож без детальної перевірки це небезпечний варіант.",
+        )
+
+    if price_vs_market_norm == "underpriced":
+        return builder.text(
+            "preview.insight.rule.underpriced",
+            default="Ціна нижча за ринок, і це може бути вигідно за умови технічно справного стану.",
+        )
+
+    return builder.text(
+        "preview.insight.rule.default",
+        default="Ціна близька до ринку; фінальне рішення варто приймати після технічної перевірки.",
+    )
+
+
+def _force_section_value(text: str, section_header: str, forced_value: str) -> str:
+    lines = str(text or "").splitlines()
+    marker = str(section_header or "").strip()
+    if not marker or not forced_value:
+        return text
+
+    for idx, line in enumerate(lines):
+        if line.strip() == marker:
+            j = idx + 1
+            while j < len(lines) and not lines[j].strip():
+                j += 1
+            if j < len(lines):
+                lines[j] = forced_value
+            else:
+                lines.append(forced_value)
+            return "\n".join(lines)
+    return text
 
 
 def _localize_risk_items(builder, risk_codes: list[str]) -> list[str]:
@@ -380,37 +397,95 @@ async def run_preview_engine(normalized_data: dict, market_context: dict, langua
     has_price = price is not None and price > 0
     missing_fields, _missing_data_note = _missing_core_fields(year, mileage, price, text_builder)
 
-    deal_score = None
-    price_vs_market = "unknown"
-    if has_price:
-        deal_score = 5.4
+    # Explicit signal 1: price position (price vs market only)
+    if has_price and market_median is not None:
+        price_diff = price - market_median
+        if price_diff <= -1000:
+            price_position = "below"
+        elif price_diff >= 1000:
+            price_position = "above"
+        else:
+            price_position = "fair"
+    elif not has_price:
+        price_position = "unknown"
+    else:
+        price_position = "fair"
 
-        if price and market_median:
-            if price > market_median * 1.2:
-                price_vs_market = "overpriced"
-                deal_score -= 1.2
-            elif price < market_median * 0.8:
-                price_vs_market = "underpriced"
-                deal_score += 0.8
-            else:
-                price_vs_market = "fair"
+    # Backward-compatible field for downstream text/risk helpers.
+    if price_position == "below":
+        price_vs_market = "underpriced"
+    elif price_position == "above":
+        price_vs_market = "overpriced"
+    elif price_position == "unknown":
+        price_vs_market = "unknown"
+    else:
+        price_vs_market = "fair"
 
-        brand = str(vehicle_data.get("make", "") or "").strip().lower()
+    # Explicit signal 2: data confidence (missing key data only)
+    missing_count = 0
+    if year is None:
+        missing_count += 1
+    if mileage is None:
+        missing_count += 1
+    if market_median is None:
+        missing_count += 1
 
-        higher_risk_brands = [str(item).strip().lower() for item in (context.get("higher_risk_brands", []) or [])]
-        high_reliability_brands = [str(item).strip().lower() for item in (context.get("high_reliability_brands", []) or [])]
+    if missing_count >= 2:
+        data_confidence_level = "low"
+    elif missing_count == 1:
+        data_confidence_level = "medium"
+    else:
+        data_confidence_level = "high"
 
-        deal_score += mileage_penalty / 450.0
+    # Explicit signal 3: ownership risk (mileage/age/known risk flags only)
+    generated_risks_base = generate_preview_risks(vehicle_data)
+    car_age = (current_year - year) if year is not None else None
+    expected_mileage = (car_age * avg_year_km) if car_age is not None and car_age > 0 else None
 
-        if brand and brand in higher_risk_brands:
-            deal_score -= 0.9
+    ownership_risk_score = 0
+    if mileage is not None and expected_mileage is not None and mileage > expected_mileage:
+        ownership_risk_score += 1
+    if car_age is not None and car_age > 10:
+        ownership_risk_score += 1
+    if any(code in {"dpf_egr_risk", "fuel_system_turbo", "egr_turbo_risk"} for code in generated_risks_base):
+        ownership_risk_score += 1
 
-        if brand and brand in high_reliability_brands:
-            deal_score += 0.6
+    if ownership_risk_score >= 2:
+        ownership_risk = "high"
+    elif ownership_risk_score == 1:
+        ownership_risk = "medium"
+    else:
+        ownership_risk = "low"
 
-        if fuel in {"дизель", "diesel"} and mileage and mileage > 220000:
-            deal_score -= 0.8
+    # Aggregate score with risk-first weighting.
+    signal_to_score = {
+        "price": {"below": 1.0, "fair": 0.0, "above": -1.0, "unknown": 0.0},
+        "confidence": {"high": 0.5, "medium": 0.0, "low": -0.5},
+        "risk": {"low": 1.0, "medium": -1.0, "high": -3.0},
+    }
+    combined_signal_score = (
+        signal_to_score["price"][price_position]
+        + signal_to_score["confidence"][data_confidence_level]
+        + signal_to_score["risk"][ownership_risk]
+    )
+    deal_score = _clamp(6.0 + combined_signal_score, 0.0, 10.0) if has_price else None
+
+    if ownership_risk == "high" and deal_score is not None:
+        deal_score = min(deal_score, 6.5)
+
+    if price_position == "below" and ownership_risk == "high" and deal_score is not None:
+        deal_score = min(deal_score, 6.0)
+
+    if ownership_risk == "high" and deal_score is not None and deal_score > 7:
+        warnings.warn("Inconsistent scoring detected", Warning)
+
+    vehicle_data["price_position"] = price_position
     vehicle_data["price_vs_market"] = price_vs_market
+    vehicle_data["data_confidence"] = data_confidence_level
+    vehicle_data["data_confidence_level"] = data_confidence_level
+    vehicle_data["ownership_risk"] = ownership_risk
+    vehicle_data["ownership_risk_score"] = ownership_risk_score
+    vehicle_data["price_available"] = has_price
 
     interior = str(vehicle_data.get("interior_wear") or "").strip().lower()
     consistency = str(vehicle_data.get("mileage_consistency") or "").strip().lower()
@@ -428,93 +503,64 @@ async def run_preview_engine(normalized_data: dict, market_context: dict, langua
     if not str(vehicle_data.get("make") or "").strip():
         data_quality_score = "low"
 
-    uncertainty_level = str(vehicle_data.get("uncertainty_level") or "").strip().lower()
-    uncertainty_low_tokens = {"low", "unknown", "uncertain", "high", "critical", "слабкий", "низький", "високий"}
-    has_uncertainty_signal = (
-        mileage_conflict
-        or consistency == "suspicious"
-        or mileage_confidence in {"low", "unknown", "suspicious", "unreliable"}
-        or uncertainty_level in uncertainty_low_tokens
-    )
-
-    missing_critical_data = mileage is None or not has_price
-    weak_listing_quality = data_quality_score == "low"
-    if missing_critical_data or weak_listing_quality or has_uncertainty_signal:
-        data_confidence_level = "low"
-    elif data_quality_score == "medium" or bool(missing_fields):
-        data_confidence_level = "medium"
-    else:
-        data_confidence_level = "high"
+    model_name = str(vehicle_data.get("model") or "").strip()
 
     vehicle_data["data_quality_score"] = data_quality_score
     vehicle_data["data_confidence_level"] = data_confidence_level
 
-    if interior == "high":
-        deal_score = (deal_score if deal_score is not None else 5.0) - 0.6
-
-    if consistency == "suspicious":
-        deal_score = (deal_score if deal_score is not None else 5.0) - 1.8
-
     inconsistencies = detect_inconsistencies(vehicle_data)
-    if inconsistencies:
-        deal_score = (deal_score if deal_score is not None else 5.0) - min(len(inconsistencies) * 0.9, 2.7)
-
-    if fleet_flag == "possible":
-        deal_score = (deal_score if deal_score is not None else 5.0) - 0.4
-    elif fleet_flag == "high":
-        deal_score = (deal_score if deal_score is not None else 5.0) - 0.8
-
     deal_label = text_builder.text("preview.deal_label.defined", default="defined")
     add_warning = False
 
-    if has_price:
-        deal_score = _clamp(deal_score, 0.0, 10.0)
-        if deal_score <= 2.0:
-            deal_text = text_builder.text("preview.deal_text.very_risky", default="price looks very risky for purchase")
-        elif deal_score <= 4.0:
-            deal_text = text_builder.text("preview.deal_text.weak", default="price looks weak considering current risk profile")
-        elif deal_score <= 6.0:
-            if price_vs_market == "overpriced":
-                deal_text = text_builder.text("preview.deal_text.overpriced", default="ціна виглядає вище ринку")
-            elif price_vs_market == "underpriced":
-                deal_text = text_builder.text("preview.deal_text.underpriced", default="ціна виглядає нижче ринку")
-            else:
-                deal_text = text_builder.text("preview.deal_text.fair", default="ціна виглядає близькою до ринку")
-        elif deal_score <= 8.0:
-            if price_vs_market == "overpriced":
-                deal_text = text_builder.text("preview.deal_text.overpriced", default="ціна виглядає вище ринку")
-            elif price_vs_market == "underpriced":
-                deal_text = text_builder.text("preview.deal_text.underpriced", default="ціна виглядає нижче ринку")
-            else:
-                deal_text = text_builder.text("preview.deal_text.fair", default="ціна виглядає близькою до ринку")
-        else:
-            if price_vs_market == "overpriced":
-                deal_text = text_builder.text("preview.deal_text.overpriced", default="ціна виглядає вище ринку")
-            elif price_vs_market == "underpriced":
-                deal_text = text_builder.text("preview.deal_text.underpriced", default="ціна виглядає нижче ринку")
-            else:
-                deal_text = text_builder.text("preview.deal_text.fair", default="ціна виглядає близькою до ринку")
-    else:
+    if not has_price:
+        deal_label = text_builder.text("preview.deal_label.undefined", default="undefined")
         deal_text = text_builder.text(
             "preview.deal_text.no_price",
             default="cannot evaluate deal fairness without price",
         )
-
-    if data_confidence_level == "low":
+    elif data_confidence_level == "low":
         deal_label = text_builder.text("preview.deal_label.undefined", default="undefined")
         add_warning = True
-        deal_text = text_builder.choice("preview.deal_text.low_confidence_variants", bucket="deal_low_confidence")
+        deal_text = text_builder.text(
+            "preview.deal_text.limited_data",
+            default="оцінка ціни обмежена через відсутність ключових даних",
+        )
+    elif price_position == "below":
+        deal_text = text_builder.text(
+            "preview.deal_text.price_below_market",
+            default="ціна виглядає вигідною відносно ринку",
+        )
+    elif price_position == "above":
+        deal_text = text_builder.text(
+            "preview.deal_text.price_above_market",
+            default="ціна виглядає завищеною відносно ринку",
+        )
+    else:
+        if market_median:
+            lower = int(round(market_median * 0.85))
+            upper = int(round(market_median * 1.15))
+            deal_text = text_builder.text(
+                "preview.deal_text.price_fair_market_range",
+                default="ціна приблизно на рівні ринку (≈ {lower}–{upper}{currency})",
+                lower=_fmt_int(lower),
+                upper=_fmt_int(upper),
+                currency=str(vehicle_data.get("currency") or context.get("currency") or "EUR").strip().upper(),
+            )
+        else:
+            deal_text = text_builder.text(
+                "preview.deal_text.price_fair_market",
+                default="ціна відповідає ринку",
+            )
+
+    if price_position == "below" and ownership_risk == "high":
+        deal_label = "risky_deal"
 
     vehicle_data["deal_label"] = deal_label
     vehicle_data["deal_warning"] = add_warning
 
-    if not has_price:
-        risk_after_text = text_builder.text("preview.risk_after.no_price", default="risk estimate is incomplete without price")
-    elif data_confidence_level == "low":
-        risk_after_text = text_builder.text("preview.risk_after.low_confidence", default="post-purchase risk was estimated with low confidence")
-    elif deal_score <= 2.5:
+    if ownership_risk == "high":
         risk_after_text = text_builder.text("preview.risk_after.high", default="high probability of major expenses")
-    elif deal_score <= 5.0:
+    elif ownership_risk == "medium":
         risk_after_text = text_builder.text("preview.risk_after.medium", default="possible expenses in the first months")
     else:
         risk_after_text = text_builder.text("preview.risk_after.low", default="no obvious immediate risk indicators")
@@ -546,15 +592,15 @@ async def run_preview_engine(normalized_data: dict, market_context: dict, langua
         print("DEBUG: PREVIEW_QUALITY_WARNING=low | ⚠ Дані можуть бути неточними")
 
     trim = str(vehicle_data.get("trim_level") or "").strip().lower()
-    trim_text = text_builder.text(f"preview.trim_levels.{trim}", default="")
+    if not trim:
+        trim_text = ""
+    else:
+        trim_text = text_builder.text(f"preview.trim_levels.{trim}", default="")
 
     features = vehicle_data.get("features") if isinstance(vehicle_data.get("features"), list) else []
     features_norm = [str(item).strip().lower() for item in features if str(item).strip()]
     has_manual_climate = any("manual climate" in item or "manual" in item and "climate" in item for item in features_norm)
     has_no_buttons = any("no buttons" in item or "without buttons" in item for item in features_norm)
-    if has_manual_climate and has_no_buttons:
-        deal_score = _clamp((deal_score if deal_score is not None else 5.0) - 0.2, 0.0, 10.0)
-
     visual_make = str(vehicle_data.get("visual_make") or "").strip()
     visual_model = str(vehicle_data.get("visual_model") or "").strip()
     print("🔍 VISUAL BRAND:", visual_make, visual_model)
@@ -563,7 +609,9 @@ async def run_preview_engine(normalized_data: dict, market_context: dict, langua
     print(
         "DEBUG: PREVIEW_DEAL_ESTIMATION | "
         f"year={year} | mileage={mileage} | fuel={fuel} | avg_year_km={avg_year_km} | "
-        f"mileage_penalty={mileage_penalty} | deal_score={deal_score} | risk_after_text={risk_after_text}"
+        f"mileage_penalty={mileage_penalty} | deal_score={deal_score} | "
+        f"price_position={price_position} | data_confidence={data_confidence_level} | "
+        f"ownership_risk={ownership_risk} | risk_after_text={risk_after_text}"
     )
 
     anomalies, anomaly_risk_score = detect_car_anomalies(vehicle_data)
@@ -571,11 +619,15 @@ async def run_preview_engine(normalized_data: dict, market_context: dict, langua
     vehicle_data["preview_anomalies"] = preview_anomalies
     vehicle_data["anomaly_risk_score"] = anomaly_risk_score
 
-    risks = generate_preview_risks(vehicle_data)
+    risks = generated_risks_base[:]
     if preview_anomalies:
         risks = preview_anomalies + risks
     if inconsistencies:
         risks = inconsistencies + risks
+    if year is None:
+        risks.insert(0, "missing_year_limits_assessment")
+    if not model_name:
+        risks.insert(0, "missing_model_precision")
     if consistency == "suspicious":
         risks.insert(0, "possible_rollback")
     if mileage_conflict:
@@ -594,7 +646,7 @@ async def run_preview_engine(normalized_data: dict, market_context: dict, langua
 
     has_normal_mileage = mileage_label_key in {"normal", "within_norm"}
     has_negative_signals = (
-        (deal_score is not None and deal_score < 5.0)
+        ownership_risk in {"medium", "high"}
         or bool(inconsistencies)
         or consistency == "suspicious"
         or mileage_conflict
@@ -637,12 +689,18 @@ async def run_preview_engine(normalized_data: dict, market_context: dict, langua
     score_value = _clamp(score_value, 0.0, 10.0)
     if missing_fields:
         score_value = _clamp(score_value * 0.6, 0.0, 10.0)
+
+    if ownership_risk == "high":
+        score_value = min(score_value, 6.9)
+    if price_position == "below" and ownership_risk == "high":
+        score_value = min(score_value, 6.0)
+
     score_value = round(score_value, 1)
 
-    if not all_risks_pool and (deal_score is None or deal_score >= 6.0) and data_quality_score != "low":
-        summary_text = text_builder.text("preview.summary.good", default="Good option without critical risk signals")
-    elif missing_fields:
+    if missing_fields:
         summary_text = text_builder.text("preview.summary.missing_data", default="Score reduced due to missing key data")
+    elif not all_risks_pool and (deal_score is None or deal_score >= 6.0) and data_quality_score != "low":
+        summary_text = text_builder.text("preview.summary.good", default="Good option without critical risk signals")
     elif deal_score is not None and deal_score <= 2.5:
         summary_text = text_builder.text("preview.summary.edge_resource", default="Vehicle appears close to wear limit; major costs are possible")
     elif deal_score is not None and deal_score <= 5.0:
@@ -690,20 +748,15 @@ async def run_preview_engine(normalized_data: dict, market_context: dict, langua
 
     risk_level_raw = vehicle_data.get("risk_level")
     if not risk_level_raw:
-        if score_value >= 8.0 and len(all_risks_pool) <= 1:
-            risk_level_raw = "low"
-        elif score_value >= 6.0 and len(all_risks_pool) <= 3:
-            risk_level_raw = "medium"
-        else:
-            risk_level_raw = "high"
+        risk_level_raw = ownership_risk
 
     price_vs_market_raw = vehicle_data.get("price_vs_market")
     if not price_vs_market_raw:
-        if deal_score is not None and deal_score <= 4.0:
+        if price_position == "above":
             price_vs_market_raw = "overpriced"
-        elif deal_score is not None and deal_score >= 8.0:
+        elif price_position == "below":
             price_vs_market_raw = "underpriced"
-        elif deal_score is not None:
+        else:
             price_vs_market_raw = "fair"
 
     plain_human_explanation = _build_plain_human_explanation(
@@ -765,12 +818,21 @@ async def run_preview_engine(normalized_data: dict, market_context: dict, langua
                 "content": (
                     "You are AI AutoBot. "
                     "Return output strictly in the user selected language only. "
-                    "No mixed language."
+                    "No mixed language. "
+                    "Keep the provided deal, risk, and insight core message lines unchanged."
                 ),
             },
             {"role": "user", "content": prompt},
         ],
-        temperature=0.2,
+        temperature=0.0,
         max_tokens=700,
     )
-    return (response.choices[0].message.content or "").strip()
+    content = (response.choices[0].message.content or "").strip()
+    deal_header = f"📊 {text_builder.text('preview.sections.deal_title', default='Deal evaluation')}:"
+    risk_header = f"⚠️ {text_builder.text('preview.sections.risk_title', default='Post-purchase risk')}:"
+    insight_header = f"💡 {text_builder.text('preview.sections.insight_title', default='What this means')}:"
+
+    content = _force_section_value(content, deal_header, f"👉 {deal_text}")
+    content = _force_section_value(content, risk_header, risk_after_text)
+    content = _force_section_value(content, insight_header, plain_human_explanation)
+    return content
